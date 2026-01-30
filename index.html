@@ -361,6 +361,34 @@
       font-size: 0.8rem;
     }
 
+    /* Keep per-season episode inputs readable and consistent. */
+    .season-episode-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      margin-top: 12px;
+    }
+
+    .season-episode-card {
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+
+    .season-episode-card label {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .season-episode-card input {
+      margin-top: 6px;
+    }
+
+    .season-episode-wrapper[hidden] {
+      display: none;
+    }
+
     .section-header {
       display: flex;
       flex-wrap: wrap;
@@ -689,6 +717,14 @@
         return { total, completed, unit: "pages" };
       }
 
+      if (typeConfig?.id === "tv") {
+        return {
+          total: Number(item.numberEpisodes || item.lengthTotal || 0),
+          completed: Number(item.episodesCompleted || item.lengthCompleted || 0),
+          unit: item.lengthUnit || "episodes",
+        };
+      }
+
       return {
         total: Number(item.lengthTotal || 0),
         completed: Number(item.lengthCompleted || 0),
@@ -708,6 +744,53 @@
         item.lengthCompleted = Number(item.pagesCompleted || 0);
         item.lengthUnit = "pages";
       }
+    }
+
+    function normalizeEpisodesPerSeason(rawValue) {
+      // Normalize stored per-season episode data into a numeric array.
+      if (!rawValue) return [];
+      if (Array.isArray(rawValue)) {
+        return rawValue.map((value) => Number(value) || 0);
+      }
+      try {
+        const parsed = JSON.parse(rawValue);
+        if (Array.isArray(parsed)) {
+          return parsed.map((value) => Number(value) || 0);
+        }
+      } catch (error) {
+        console.warn("Unable to parse episodes per season data", error);
+      }
+      return [];
+    }
+
+    function renderSeasonEpisodeInputs(existingCounts, seasonCount, prefix) {
+      // Build the per-season input markup to reuse across create and edit forms.
+      if (!seasonCount || seasonCount <= 0) return "";
+      const counts = existingCounts || [];
+      return Array.from({ length: seasonCount }, (_, index) => {
+        const seasonNumber = index + 1;
+        const existingValue = counts[index] ?? "";
+        return `
+          <div class="season-episode-card">
+            <label for="${prefix}-season-${seasonNumber}">Season ${seasonNumber}</label>
+            <input
+              id="${prefix}-season-${seasonNumber}"
+              type="number"
+              min="0"
+              value="${existingValue}"
+              data-season-index="${index}"
+              placeholder="Episodes"
+            />
+          </div>
+        `;
+      }).join("");
+    }
+
+    function syncTvLengthFields(item) {
+      // Keep TV progress metrics aligned with episode totals and completions.
+      item.lengthTotal = Number(item.numberEpisodes || 0);
+      item.lengthCompleted = Number(item.episodesCompleted || 0);
+      item.lengthUnit = "episodes";
     }
 
     // ---------------------------------
@@ -790,6 +873,83 @@
       updateVisibility();
     }
 
+    function getTvSeasonPrefix(form, typeConfig) {
+      // Build deterministic input prefixes for TV season/episode fields.
+      const formId = form?.getAttribute("id") || "";
+      return formId.startsWith("edit-") ? `edit-${typeConfig.id}` : typeConfig.id;
+    }
+
+    function getSeasonCountsFromInputs(container) {
+      // Read the season counts from rendered per-season inputs.
+      if (!container) return [];
+      return Array.from(container.querySelectorAll("input[data-season-index]")).map((input) => Number(input.value) || 0);
+    }
+
+    function updateSeasonEpisodeSection(form, typeConfig, seasonCount, episodesPerSeason = []) {
+      // Render the per-season section and keep hidden data aligned.
+      const wrapper = form.querySelector(".season-episode-wrapper");
+      const container = form.querySelector(".season-episode-grid");
+      const hiddenInput = form.querySelector("[name='episodesPerSeason']");
+      const totalEpisodesInput = form.querySelector("[name='numberEpisodes']");
+      if (!wrapper || !container || !hiddenInput || !totalEpisodesInput) return;
+
+      if (!seasonCount || seasonCount <= 0) {
+        wrapper.hidden = true;
+        container.innerHTML = "";
+        hiddenInput.value = JSON.stringify([]);
+        return;
+      }
+
+      const prefix = getTvSeasonPrefix(form, typeConfig);
+      wrapper.hidden = false;
+      container.innerHTML = renderSeasonEpisodeInputs(episodesPerSeason, seasonCount, prefix);
+
+      const handleSeasonInputChange = () => {
+        const updatedCounts = getSeasonCountsFromInputs(container);
+        hiddenInput.value = JSON.stringify(updatedCounts);
+
+        // Auto-sum total episodes unless the user explicitly overrides it.
+        if (!totalEpisodesInput.dataset.manual) {
+          const totalEpisodes = updatedCounts.reduce((sum, value) => sum + value, 0);
+          if (totalEpisodes > 0) {
+            totalEpisodesInput.value = totalEpisodes;
+          }
+        }
+      };
+
+      container.querySelectorAll("input[data-season-index]").forEach((input) => {
+        input.addEventListener("input", handleSeasonInputChange);
+      });
+
+      handleSeasonInputChange();
+    }
+
+    function wireTvSeasonInputs(form, typeConfig, episodesPerSeason = []) {
+      // Manage the dynamic per-season episode inputs for TV series.
+      const seasonsInput = form.querySelector("[name='numberSeasons']");
+      const totalEpisodesInput = form.querySelector("[name='numberEpisodes']");
+      const hiddenInput = form.querySelector("[name='episodesPerSeason']");
+      if (!seasonsInput || !totalEpisodesInput || !hiddenInput) return;
+
+      const seedCounts = normalizeEpisodesPerSeason(episodesPerSeason);
+      const initialSeasonCount = Number(seasonsInput.value || seedCounts.length || 0);
+      if (initialSeasonCount > 0) {
+        updateSeasonEpisodeSection(form, typeConfig, initialSeasonCount, seedCounts);
+      } else {
+        updateSeasonEpisodeSection(form, typeConfig, 0, []);
+      }
+
+      totalEpisodesInput.addEventListener("input", () => {
+        totalEpisodesInput.dataset.manual = "true";
+      });
+
+      seasonsInput.addEventListener("input", () => {
+        const updatedCounts = getSeasonCountsFromInputs(form.querySelector(".season-episode-grid"));
+        const seasonCount = Number(seasonsInput.value || 0);
+        updateSeasonEpisodeSection(form, typeConfig, seasonCount, updatedCounts);
+      });
+    }
+
     function getCoverMarkup(coverUrl, title) {
       // Render cover art markup when a valid cover URL is present.
       if (!coverUrl) return "";
@@ -852,6 +1012,73 @@
         genres: workData?.subjects?.slice(0, 6).join(", ") || "",
         coverUrl: buildCoverUrl(topMatch.cover_i),
         summary: extractWorkSummary(workData),
+      };
+    }
+
+    function formatDateStringToInput(dateString) {
+      // Convert loosely formatted date strings into YYYY-MM-DD for date inputs.
+      if (!dateString) return "";
+      const parsedDate = new Date(dateString);
+      if (Number.isNaN(parsedDate.getTime())) return "";
+      const year = parsedDate.getFullYear();
+      const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
+      const day = String(parsedDate.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    async function fetchFilmLookupByTitle(title) {
+      // Query OMDb for film metadata using the title string.
+      const searchUrl = `https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=thewdb`;
+      const response = await fetch(searchUrl);
+      if (!response.ok) {
+        throw new Error("Unable to reach OMDb.");
+      }
+
+      const data = await response.json();
+      if (!data || data.Response === "False") return null;
+
+      const runtimeMinutes = Number.parseInt(data.Runtime, 10);
+      return {
+        releaseDate: formatDateStringToInput(data.Released),
+        director: data.Director || "",
+        runtimeMinutes: Number.isNaN(runtimeMinutes) ? "" : runtimeMinutes,
+        genres: data.Genre || "",
+        summary: data.Plot || "",
+        coverUrl: data.Poster && data.Poster !== "N/A" ? data.Poster : "",
+      };
+    }
+
+    async function fetchTvLookupByTitle(title) {
+      // Query TVMaze for show metadata and embedded episode data.
+      const searchUrl = `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(title)}&embed=episodes`;
+      const response = await fetch(searchUrl);
+      if (!response.ok) {
+        throw new Error("Unable to reach TVMaze.");
+      }
+
+      const data = await response.json();
+      if (!data) return null;
+
+      const episodes = data?._embedded?.episodes || [];
+      const seasonMap = new Map();
+      episodes.forEach((episode) => {
+        const seasonNumber = Number(episode.season);
+        if (!seasonNumber) return;
+        seasonMap.set(seasonNumber, (seasonMap.get(seasonNumber) || 0) + 1);
+      });
+
+      const sortedSeasons = Array.from(seasonMap.keys()).sort((a, b) => a - b);
+      const episodesPerSeason = sortedSeasons.map((season) => seasonMap.get(season));
+
+      return {
+        premiereDate: data.premiered || "",
+        episodeRuntime: data.averageRuntime || data.runtime || "",
+        numberSeasons: sortedSeasons.length,
+        numberEpisodes: episodes.length,
+        episodesPerSeason,
+        genres: Array.isArray(data.genres) ? data.genres.join(", ") : "",
+        summary: data.summary ? data.summary.replace(/<[^>]+>/g, "").trim() : "",
+        coverUrl: data.image?.original || data.image?.medium || "",
       };
     }
 
@@ -1021,16 +1248,25 @@
     function renderForm(typeConfig) {
       // Render the form HTML for adding new items inside the modal.
       const isBook = typeConfig.id === "book";
+      const isFilm = typeConfig.id === "film";
+      const isTv = typeConfig.id === "tv";
+      const supportsLookup = isBook || isFilm || isTv;
       return `
         <form id="form-${typeConfig.id}" class="grid two">
           <div>
             <label for="${typeConfig.id}-name">Name</label>
-            ${isBook ? `
+            ${supportsLookup ? `
             <div class="inline-field-actions">
               <input id="${typeConfig.id}-name" name="name" placeholder="Title" required />
-              <button type="button" class="ghost" id="book-lookup">Find book info</button>
+              <button type="button" class="ghost" id="${typeConfig.id}-lookup">${isBook ? "Find book info" : isFilm ? "Find film info" : "Find show info"}</button>
             </div>
-            <span class="lookup-status" id="book-lookup-status">Search Open Library to prefill author, publication date, genres, cover art, and summary.</span>
+            <span class="lookup-status" id="${typeConfig.id}-lookup-status">
+              ${isBook
+                ? "Search Open Library to prefill author, publication date, genres, cover art, and summary."
+                : isFilm
+                ? "Search OMDb to prefill release date, director, and runtime."
+                : "Search TVMaze to prefill premiere date, seasons, episodes, and runtime."}
+            </span>
             ` : `
             <input id="${typeConfig.id}-name" name="name" placeholder="Title" required />
             `}
@@ -1038,9 +1274,9 @@
           <div>
             <label for="${typeConfig.id}-status">Status</label>
             <select id="${typeConfig.id}-status" name="status">
-              <option value="finished">${typeConfig.statusLabels.finished}</option>
+              <option value="wish" selected>${typeConfig.statusLabels.wish}</option>
               <option value="current">${typeConfig.statusLabels.current}</option>
-              <option value="wish">${typeConfig.statusLabels.wish}</option>
+              <option value="finished">${typeConfig.statusLabels.finished}</option>
             </select>
           </div>
           <div>
@@ -1075,6 +1311,33 @@
             <label for="${typeConfig.id}-audioCompleted">Audio completed (HH:MM)</label>
             <input id="${typeConfig.id}-audioCompleted" name="audioCompleted" type="time" step="60" />
           </div>
+          <input type="hidden" name="lengthTotal" />
+          <input type="hidden" name="lengthCompleted" />
+          <input type="hidden" name="lengthUnit" />
+          ` : isTv ? `
+          <div>
+            <label for="${typeConfig.id}-seasons">Number of seasons</label>
+            <input id="${typeConfig.id}-seasons" name="numberSeasons" type="number" min="0" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-episodes">Total episodes</label>
+            <input id="${typeConfig.id}-episodes" name="numberEpisodes" type="number" min="0" />
+            <span class="helper-text">Total episodes power the progress meter.</span>
+          </div>
+          <div>
+            <label for="${typeConfig.id}-episodes-completed">Episodes watched</label>
+            <input id="${typeConfig.id}-episodes-completed" name="episodesCompleted" type="number" min="0" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-episode-runtime">Episode runtime (minutes)</label>
+            <input id="${typeConfig.id}-episode-runtime" name="episodeRuntime" type="number" min="0" />
+          </div>
+          <div class="season-episode-wrapper" id="${typeConfig.id}-season-wrapper" style="grid-column: 1 / -1;" hidden>
+            <label>Episodes per season</label>
+            <div id="${typeConfig.id}-season-episodes" class="season-episode-grid"></div>
+            <span class="helper-text">Add episodes per season to capture the full series breakdown.</span>
+          </div>
+          <input type="hidden" name="episodesPerSeason" />
           <input type="hidden" name="lengthTotal" />
           <input type="hidden" name="lengthCompleted" />
           <input type="hidden" name="lengthUnit" />
@@ -1127,6 +1390,8 @@
     function renderEditForm(typeConfig, item) {
       // Render a fully detailed edit form with automated dates surfaced as read-only fields.
       const isBook = typeConfig.id === "book";
+      const isTv = typeConfig.id === "tv";
+      const parsedEpisodesPerSeason = normalizeEpisodesPerSeason(item.episodesPerSeason);
       const bookFormat = item.bookFormat || "physical";
       const audioDuration = item.audioDuration || formatMinutesToTime(item.lengthTotal || 0);
       const audioCompleted = item.audioCompleted || formatMinutesToTime(item.lengthCompleted || 0);
@@ -1178,6 +1443,35 @@
             <label for="edit-${typeConfig.id}-audioCompleted">Audio completed (HH:MM)</label>
             <input id="edit-${typeConfig.id}-audioCompleted" name="audioCompleted" type="time" step="60" value="${audioCompleted}" />
           </div>
+          <input type="hidden" name="lengthTotal" />
+          <input type="hidden" name="lengthCompleted" />
+          <input type="hidden" name="lengthUnit" />
+          ` : isTv ? `
+          <div>
+            <label for="edit-${typeConfig.id}-seasons">Number of seasons</label>
+            <input id="edit-${typeConfig.id}-seasons" name="numberSeasons" type="number" min="0" value="${item.numberSeasons || ""}" />
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-episodes">Total episodes</label>
+            <input id="edit-${typeConfig.id}-episodes" name="numberEpisodes" type="number" min="0" value="${item.numberEpisodes || ""}" />
+            <span class="helper-text">Total episodes power the progress meter.</span>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-episodes-completed">Episodes watched</label>
+            <input id="edit-${typeConfig.id}-episodes-completed" name="episodesCompleted" type="number" min="0" value="${item.episodesCompleted || item.lengthCompleted || ""}" />
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-episode-runtime">Episode runtime (minutes)</label>
+            <input id="edit-${typeConfig.id}-episode-runtime" name="episodeRuntime" type="number" min="0" value="${item.episodeRuntime || ""}" />
+          </div>
+          <div class="season-episode-wrapper" id="edit-${typeConfig.id}-season-wrapper" style="grid-column: 1 / -1;" ${Number(item.numberSeasons || 0) > 0 ? "" : "hidden"}>
+            <label>Episodes per season</label>
+            <div id="edit-${typeConfig.id}-season-episodes" class="season-episode-grid">
+              ${renderSeasonEpisodeInputs(parsedEpisodesPerSeason, Number(item.numberSeasons || 0), `edit-${typeConfig.id}`)}
+            </div>
+            <span class="helper-text">Update the per-season episode totals as needed.</span>
+          </div>
+          <input type="hidden" name="episodesPerSeason" value='${JSON.stringify(parsedEpisodesPerSeason)}' />
           <input type="hidden" name="lengthTotal" />
           <input type="hidden" name="lengthCompleted" />
           <input type="hidden" name="lengthUnit" />
@@ -1255,6 +1549,7 @@
     function renderProgressUpdateForm(typeConfig, item) {
       // Render a minimal modal form that only updates the completed progress field.
       const isBook = typeConfig.id === "book";
+      const isTv = typeConfig.id === "tv";
       const bookFormat = item.bookFormat || "physical";
       let inputId = `progress-${typeConfig.id}-completed`;
       let labelText = `Completed ${typeConfig.lengthHint}`;
@@ -1273,6 +1568,11 @@
         labelText = "Pages completed";
         inputType = "number";
         inputValue = item.pagesCompleted || item.lengthCompleted || "";
+      } else if (isTv) {
+        inputId = `progress-${typeConfig.id}-episodes-completed`;
+        labelText = "Episodes watched";
+        inputType = "number";
+        inputValue = item.episodesCompleted || item.lengthCompleted || "";
       }
 
       return `
@@ -1339,6 +1639,9 @@
             item.pagesCompleted = updatedValue;
           }
           syncBookLengthFields(item);
+        } else if (typeConfig.id === "tv") {
+          item.episodesCompleted = updatedValue;
+          syncTvLengthFields(item);
         } else {
           item.lengthCompleted = updatedValue;
         }
@@ -1362,6 +1665,12 @@
       modalBody.innerHTML = renderEditForm(typeConfig, item);
       wireEditFormEvents(typeConfig, item.id);
       wireBookFormatToggles(modalBody);
+      if (typeConfig.id === "tv") {
+        const form = modalBody.querySelector(`#edit-form-${typeConfig.id}`);
+        if (form) {
+          wireTvSeasonInputs(form, typeConfig, item.episodesPerSeason);
+        }
+      }
       modalOverlay.classList.add("open");
       modalOverlay.setAttribute("aria-hidden", "false");
     }
@@ -1386,6 +1695,9 @@
         Object.assign(item, updatedValues);
         if (typeConfig.id === "book") {
           syncBookLengthFields(item);
+        } else if (typeConfig.id === "tv") {
+          item.episodesPerSeason = normalizeEpisodesPerSeason(item.episodesPerSeason);
+          syncTvLengthFields(item);
         }
         applyAutomatedDates(item, { setUpdated: true });
         saveState();
@@ -1406,6 +1718,13 @@
       if (typeConfig.id === "book") {
         wireBookLookup(form);
       }
+      if (typeConfig.id === "film") {
+        wireFilmLookup(form);
+      }
+      if (typeConfig.id === "tv") {
+        wireTvLookup(form, typeConfig);
+        wireTvSeasonInputs(form, typeConfig);
+      }
 
       form.addEventListener("submit", (event) => {
         event.preventDefault();
@@ -1416,6 +1735,9 @@
         applyAutomatedDates(item, { setAdded: true, setUpdated: true });
         if (typeConfig.id === "book") {
           syncBookLengthFields(item);
+        } else if (typeConfig.id === "tv") {
+          item.episodesPerSeason = normalizeEpisodesPerSeason(item.episodesPerSeason);
+          syncTvLengthFields(item);
         }
         state[typeConfig.id].push(item);
         form.reset();
@@ -1426,7 +1748,7 @@
     }
 
     function setLookupStatus(statusElement, message, isError = false) {
-      // Provide visual feedback for Open Library lookups.
+      // Provide visual feedback for external lookup actions.
       if (!statusElement) return;
       statusElement.textContent = message;
       statusElement.style.color = isError ? "var(--danger)" : "var(--muted)";
@@ -1447,6 +1769,36 @@
       setFieldIfEmpty(form.querySelector("[name='genres']"), lookupResult.genres);
       setFieldIfEmpty(form.querySelector("[name='cover']"), lookupResult.coverUrl);
       setFieldIfEmpty(form.querySelector("[name='summary']"), lookupResult.summary);
+    }
+
+    function applyFilmLookupResult(form, lookupResult) {
+      // Map OMDb lookup results into the add-film form fields.
+      if (!form || !lookupResult) return;
+      setFieldIfEmpty(form.querySelector("[name='datePublished']"), lookupResult.releaseDate);
+      setFieldIfEmpty(form.querySelector("[name='contributors']"), lookupResult.director);
+      setFieldIfEmpty(form.querySelector("[name='lengthTotal']"), lookupResult.runtimeMinutes);
+      setFieldIfEmpty(form.querySelector("[name='lengthUnit']"), "minutes");
+      setFieldIfEmpty(form.querySelector("[name='genres']"), lookupResult.genres);
+      setFieldIfEmpty(form.querySelector("[name='summary']"), lookupResult.summary);
+      setFieldIfEmpty(form.querySelector("[name='cover']"), lookupResult.coverUrl);
+    }
+
+    function applyTvLookupResult(form, typeConfig, lookupResult) {
+      // Map TVMaze lookup results into the add-show form fields.
+      if (!form || !lookupResult) return;
+      setFieldIfEmpty(form.querySelector("[name='datePublished']"), lookupResult.premiereDate);
+      setFieldIfEmpty(form.querySelector("[name='numberSeasons']"), lookupResult.numberSeasons);
+      setFieldIfEmpty(form.querySelector("[name='numberEpisodes']"), lookupResult.numberEpisodes);
+      setFieldIfEmpty(form.querySelector("[name='episodeRuntime']"), lookupResult.episodeRuntime);
+      setFieldIfEmpty(form.querySelector("[name='genres']"), lookupResult.genres);
+      setFieldIfEmpty(form.querySelector("[name='summary']"), lookupResult.summary);
+      setFieldIfEmpty(form.querySelector("[name='cover']"), lookupResult.coverUrl);
+
+      const seasonsInput = form.querySelector("[name='numberSeasons']");
+      const seasonCount = Number(seasonsInput?.value || lookupResult.numberSeasons || 0);
+      if (seasonCount > 0 && lookupResult.episodesPerSeason?.length) {
+        updateSeasonEpisodeSection(form, typeConfig, seasonCount, lookupResult.episodesPerSeason);
+      }
     }
 
     function wireBookLookup(form) {
@@ -1481,6 +1833,84 @@
         } catch (error) {
           console.warn("Failed to fetch book data", error);
           setLookupStatus(statusLabel, "Unable to fetch book details right now.", true);
+        } finally {
+          lookupButton.disabled = false;
+          lookupButton.textContent = defaultButtonLabel;
+        }
+      });
+    }
+
+    function wireFilmLookup(form) {
+      // Allow users to search OMDb and prefill core film metadata.
+      const lookupButton = form.querySelector("#film-lookup");
+      const statusLabel = form.querySelector("#film-lookup-status");
+      const titleInput = form.querySelector("#film-name");
+      if (!lookupButton || !statusLabel || !titleInput) return;
+
+      const defaultButtonLabel = lookupButton.textContent;
+
+      lookupButton.addEventListener("click", async () => {
+        const title = titleInput.value.trim();
+        if (!title) {
+          setLookupStatus(statusLabel, "Enter a title to search OMDb.", true);
+          return;
+        }
+
+        lookupButton.disabled = true;
+        lookupButton.textContent = "Searching...";
+        setLookupStatus(statusLabel, "Searching OMDb for film details...");
+
+        try {
+          const lookupResult = await fetchFilmLookupByTitle(title);
+          if (!lookupResult) {
+            setLookupStatus(statusLabel, "No results found. Try a different title.", true);
+            return;
+          }
+
+          applyFilmLookupResult(form, lookupResult);
+          setLookupStatus(statusLabel, "Film details added. Review and adjust as needed.");
+        } catch (error) {
+          console.warn("Failed to fetch film data", error);
+          setLookupStatus(statusLabel, "Unable to fetch film details right now.", true);
+        } finally {
+          lookupButton.disabled = false;
+          lookupButton.textContent = defaultButtonLabel;
+        }
+      });
+    }
+
+    function wireTvLookup(form, typeConfig) {
+      // Allow users to search TVMaze and prefill core TV metadata.
+      const lookupButton = form.querySelector("#tv-lookup");
+      const statusLabel = form.querySelector("#tv-lookup-status");
+      const titleInput = form.querySelector("#tv-name");
+      if (!lookupButton || !statusLabel || !titleInput) return;
+
+      const defaultButtonLabel = lookupButton.textContent;
+
+      lookupButton.addEventListener("click", async () => {
+        const title = titleInput.value.trim();
+        if (!title) {
+          setLookupStatus(statusLabel, "Enter a title to search TVMaze.", true);
+          return;
+        }
+
+        lookupButton.disabled = true;
+        lookupButton.textContent = "Searching...";
+        setLookupStatus(statusLabel, "Searching TVMaze for show details...");
+
+        try {
+          const lookupResult = await fetchTvLookupByTitle(title);
+          if (!lookupResult) {
+            setLookupStatus(statusLabel, "No results found. Try a different title.", true);
+            return;
+          }
+
+          applyTvLookupResult(form, typeConfig, lookupResult);
+          setLookupStatus(statusLabel, "Show details added. Review and adjust as needed.");
+        } catch (error) {
+          console.warn("Failed to fetch TV data", error);
+          setLookupStatus(statusLabel, "Unable to fetch show details right now.", true);
         } finally {
           lookupButton.disabled = false;
           lookupButton.textContent = defaultButtonLabel;
