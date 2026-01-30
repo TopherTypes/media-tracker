@@ -216,13 +216,15 @@
       gap: 8px;
     }
 
+    /* Keep media previews compact within cards so they don't overwhelm the layout. */
     .media-cover {
-      width: 100%;
+      width: min(180px, 100%);
       aspect-ratio: 3 / 4;
       border-radius: 12px;
       overflow: hidden;
       background: var(--surface-2);
       border: 1px solid var(--border);
+      justify-self: start;
     }
 
     .media-cover img {
