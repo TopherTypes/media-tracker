@@ -200,6 +200,12 @@
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     }
 
+    /* Keep book list cards fixed-width so partially filled rows don't stretch. */
+    .media-grid.book-grid {
+      grid-template-columns: repeat(auto-fill, 220px);
+      justify-content: start;
+    }
+
     .media-compact-card {
       border: 1px solid var(--border);
       border-radius: 14px;
@@ -843,7 +849,7 @@
         </div>
         <div class="card">
           <h3>${typeConfig.label} list</h3>
-          <div class="media-grid" id="list-${typeConfig.id}"></div>
+          <div class="media-grid ${typeConfig.id === "book" ? "book-grid" : ""}" id="list-${typeConfig.id}"></div>
         </div>
       `;
 
