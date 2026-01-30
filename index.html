@@ -413,6 +413,8 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.2s ease;
+      /* Ensure modals sit above progress labels and other UI elements. */
+      z-index: 1000;
     }
 
     .modal-overlay.open {
@@ -429,6 +431,8 @@
       border: 1px solid var(--border);
       box-shadow: var(--shadow);
       padding: 24px;
+      /* Keep modal content above the overlay within the stacking context. */
+      z-index: 1001;
     }
 
     .modal-header {
