@@ -194,6 +194,44 @@
       gap: 12px;
     }
 
+    .media-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    .media-compact-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(31, 35, 48, 0.7);
+      display: grid;
+      gap: 10px;
+    }
+
+    .media-compact-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .media-cover {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+    }
+
+    .media-cover img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
     .media-header {
       display: flex;
       flex-wrap: wrap;
@@ -326,7 +364,7 @@
       <div class="dashboard-grid">
         <div class="card" id="in-progress">
           <h3>Currently in progress</h3>
-          <div id="in-progress-list" class="media-list"></div>
+          <div id="in-progress-list" class="media-grid"></div>
         </div>
         <div class="card" id="monthly-overview">
           <h3>Monthly completion overview</h3>
@@ -501,18 +539,6 @@
       }
     }
 
-    function refreshAutomatedDateFields(item) {
-      // Sync read-only date inputs in the active list view without re-rendering.
-      const listContainer = document.getElementById(`list-${activeTab}`);
-      if (!listContainer) return;
-      const fields = listContainer.querySelectorAll(`[data-auto-field][data-id="${item.id}"]`);
-      fields.forEach((field) => {
-        const fieldName = field.getAttribute("data-auto-field");
-        if (!fieldName) return;
-        field.value = item[fieldName] || "";
-      });
-    }
-
     function calculateProgress(item, typeConfig) {
       const { total, completed } = getProgressSnapshot(item, typeConfig);
       if (!total || total <= 0) return 0;
@@ -667,6 +693,17 @@
       updateVisibility();
     }
 
+    function getCoverMarkup(coverUrl, title) {
+      // Render cover art markup when a valid cover URL is present.
+      if (!coverUrl) return "";
+      const safeTitle = title || "Untitled";
+      return `
+        <div class="media-cover">
+          <img src="${coverUrl}" alt="Cover art for ${safeTitle}" loading="lazy" />
+        </div>
+      `;
+    }
+
     function renderDashboard() {
       renderInProgress();
       renderMonthlyOverview();
@@ -692,9 +729,10 @@
         const typeConfig = MEDIA_TYPES.find((type) => type.id === item.typeId);
         const progress = calculateProgress(item, typeConfig);
         const card = document.createElement("div");
-        card.className = "media-item";
+        card.className = "media-compact-card";
         card.innerHTML = `
-          <div class="media-header">
+          ${getCoverMarkup(item.cover, item.name)}
+          <div class="media-compact-header">
             <h4>${item.name || "Untitled"}</h4>
             <span class="pill">${item.typeLabel}</span>
           </div>
@@ -803,7 +841,7 @@
         </div>
         <div class="card">
           <h3>${typeConfig.label} list</h3>
-          <div class="media-list" id="list-${typeConfig.id}"></div>
+          <div class="media-grid" id="list-${typeConfig.id}"></div>
         </div>
       `;
 
@@ -901,31 +939,6 @@
             <textarea id="${typeConfig.id}-review" name="review"></textarea>
           </div>
           <div>
-            <label for="${typeConfig.id}-date-added">Date added</label>
-            <input id="${typeConfig.id}-date-added" type="date" readonly value="${getTodayDateString()}" />
-            <span class="helper-text">Auto-set when the entry is created.</span>
-          </div>
-          <div>
-            <label for="${typeConfig.id}-date-started">Date started</label>
-            <input id="${typeConfig.id}-date-started" type="date" readonly />
-            <span class="helper-text">Auto-set when status changes to in progress.</span>
-          </div>
-          <div>
-            <label for="${typeConfig.id}-date-finished">Date finished</label>
-            <input id="${typeConfig.id}-date-finished" type="date" readonly />
-            <span class="helper-text">Auto-set when status changes to completed.</span>
-          </div>
-          <div>
-            <label for="${typeConfig.id}-date-reviewed">Date reviewed</label>
-            <input id="${typeConfig.id}-date-reviewed" type="date" readonly />
-            <span class="helper-text">Auto-set when a review is added.</span>
-          </div>
-          <div>
-            <label for="${typeConfig.id}-date-updated">Date updated</label>
-            <input id="${typeConfig.id}-date-updated" type="date" readonly value="${getTodayDateString()}" />
-            <span class="helper-text">Auto-set whenever details change.</span>
-          </div>
-          <div>
             <label for="${typeConfig.id}-date-published">Publication / Production date</label>
             <input id="${typeConfig.id}-date-published" name="datePublished" type="date" />
           </div>
@@ -935,6 +948,178 @@
           </div>
         </form>
       `;
+    }
+
+    function renderEditForm(typeConfig, item) {
+      // Render a fully detailed edit form with automated dates surfaced as read-only fields.
+      const isBook = typeConfig.id === "book";
+      const bookFormat = item.bookFormat || "physical";
+      const audioDuration = item.audioDuration || formatMinutesToTime(item.lengthTotal || 0);
+      const audioCompleted = item.audioCompleted || formatMinutesToTime(item.lengthCompleted || 0);
+
+      return `
+        <form id="edit-form-${typeConfig.id}" class="grid two">
+          <input type="hidden" name="id" value="${item.id}" />
+          <div>
+            <label for="edit-${typeConfig.id}-name">Name</label>
+            <input id="edit-${typeConfig.id}-name" name="name" value="${item.name || ""}" required />
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-status">Status</label>
+            <select id="edit-${typeConfig.id}-status" name="status">
+              <option value="finished" ${item.status === "finished" ? "selected" : ""}>${typeConfig.statusLabels.finished}</option>
+              <option value="current" ${item.status === "current" ? "selected" : ""}>${typeConfig.statusLabels.current}</option>
+              <option value="wish" ${!item.status || item.status === "wish" ? "selected" : ""}>${typeConfig.statusLabels.wish}</option>
+            </select>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-summary">Summary</label>
+            <textarea id="edit-${typeConfig.id}-summary" name="summary">${item.summary || ""}</textarea>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-cover">Photo / Poster / Cover</label>
+            <input id="edit-${typeConfig.id}-cover" name="cover" value="${item.cover || ""}" />
+          </div>
+          ${isBook ? `
+          <div>
+            <label for="edit-${typeConfig.id}-bookFormat">Book format</label>
+            <select id="edit-${typeConfig.id}-bookFormat" name="bookFormat">
+              <option value="physical" ${bookFormat === "physical" ? "selected" : ""}>Physical book (pages)</option>
+              <option value="audio" ${bookFormat === "audio" ? "selected" : ""}>Audio book (HH:MM)</option>
+            </select>
+          </div>
+          <div class="book-format-fields" data-format="physical">
+            <label for="edit-${typeConfig.id}-pageCount">Page count</label>
+            <input id="edit-${typeConfig.id}-pageCount" name="pageCount" type="number" min="0" value="${item.pageCount || item.lengthTotal || ""}" />
+          </div>
+          <div class="book-format-fields" data-format="physical">
+            <label for="edit-${typeConfig.id}-pagesCompleted">Pages completed</label>
+            <input id="edit-${typeConfig.id}-pagesCompleted" name="pagesCompleted" type="number" min="0" value="${item.pagesCompleted || item.lengthCompleted || ""}" />
+          </div>
+          <div class="book-format-fields" data-format="audio">
+            <label for="edit-${typeConfig.id}-audioDuration">Audio duration (HH:MM)</label>
+            <input id="edit-${typeConfig.id}-audioDuration" name="audioDuration" type="time" step="60" value="${audioDuration}" />
+          </div>
+          <div class="book-format-fields" data-format="audio">
+            <label for="edit-${typeConfig.id}-audioCompleted">Audio completed (HH:MM)</label>
+            <input id="edit-${typeConfig.id}-audioCompleted" name="audioCompleted" type="time" step="60" value="${audioCompleted}" />
+          </div>
+          <input type="hidden" name="lengthTotal" />
+          <input type="hidden" name="lengthCompleted" />
+          <input type="hidden" name="lengthUnit" />
+          ` : `
+          <div>
+            <label for="edit-${typeConfig.id}-length-total">Total length (${typeConfig.lengthHint})</label>
+            <input id="edit-${typeConfig.id}-length-total" name="lengthTotal" type="number" min="0" value="${item.lengthTotal || ""}" />
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-length-completed">Completed length</label>
+            <input id="edit-${typeConfig.id}-length-completed" name="lengthCompleted" type="number" min="0" value="${item.lengthCompleted || ""}" />
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-length-unit">Length unit</label>
+            <input id="edit-${typeConfig.id}-length-unit" name="lengthUnit" value="${item.lengthUnit || ""}" />
+          </div>
+          `}
+          <div>
+            <label for="edit-${typeConfig.id}-rating">Rating (0-5)</label>
+            <input id="edit-${typeConfig.id}-rating" name="rating" type="number" min="0" max="5" step="0.5" value="${item.rating || ""}" />
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-genres">Genres</label>
+            <input id="edit-${typeConfig.id}-genres" name="genres" value="${item.genres || ""}" />
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-contributors">Authors / Directors / Actors</label>
+            <input id="edit-${typeConfig.id}-contributors" name="contributors" value="${item.contributors || ""}" />
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-notes">Personal notes</label>
+            <textarea id="edit-${typeConfig.id}-notes" name="notes">${item.notes || ""}</textarea>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-review">Personal review</label>
+            <textarea id="edit-${typeConfig.id}-review" name="review">${item.review || ""}</textarea>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-date-added">Date added</label>
+            <input id="edit-${typeConfig.id}-date-added" name="dateAdded" type="date" value="${item.dateAdded || ""}" readonly />
+            <span class="helper-text">Auto-set when the entry is created.</span>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-date-started">Date started</label>
+            <input id="edit-${typeConfig.id}-date-started" name="dateStarted" type="date" value="${item.dateStarted || ""}" readonly />
+            <span class="helper-text">Auto-set when status changes to in progress.</span>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-date-finished">Date finished</label>
+            <input id="edit-${typeConfig.id}-date-finished" name="dateFinished" type="date" value="${item.dateFinished || ""}" readonly />
+            <span class="helper-text">Auto-set when status changes to completed.</span>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-date-reviewed">Date reviewed</label>
+            <input id="edit-${typeConfig.id}-date-reviewed" name="dateReviewed" type="date" value="${item.dateReviewed || ""}" readonly />
+            <span class="helper-text">Auto-set when a review is added.</span>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-date-updated">Date updated</label>
+            <input id="edit-${typeConfig.id}-date-updated" name="dateUpdated" type="date" value="${item.dateUpdated || ""}" readonly />
+            <span class="helper-text">Auto-set whenever details change.</span>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-date-published">Publication / Production date</label>
+            <input id="edit-${typeConfig.id}-date-published" name="datePublished" type="date" value="${item.datePublished || ""}" />
+          </div>
+          <div class="modal-actions" style="grid-column: 1 / -1;">
+            <button type="submit" class="primary">Save changes</button>
+            <button type="button" class="ghost" id="modal-cancel">Cancel</button>
+          </div>
+        </form>
+      `;
+    }
+
+    function openEditModal(typeConfig, item) {
+      // Open the shared modal with a pre-filled edit form for the selected entry.
+      const modalOverlay = document.getElementById("modal-overlay");
+      if (!modalOverlay) return;
+      const modalTitle = document.getElementById("modal-title");
+      const modalBody = document.getElementById("modal-body");
+      if (!modalTitle || !modalBody) return;
+
+      modalTitle.textContent = `Edit ${item.name || typeConfig.label.slice(0, -1)}`;
+      modalBody.innerHTML = renderEditForm(typeConfig, item);
+      wireEditFormEvents(typeConfig, item.id);
+      wireBookFormatToggles(modalBody);
+      modalOverlay.classList.add("open");
+      modalOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function wireEditFormEvents(typeConfig, itemId) {
+      // Persist edits to the selected item while keeping automated dates in sync.
+      const form = document.getElementById(`edit-form-${typeConfig.id}`);
+      if (!form) return;
+
+      const cancelButton = document.getElementById("modal-cancel");
+      if (cancelButton) {
+        cancelButton.addEventListener("click", () => closeModal());
+      }
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const formData = new FormData(form);
+        const updatedValues = Object.fromEntries(formData.entries());
+        const item = state[typeConfig.id].find((entry) => entry.id === itemId);
+        if (!item) return;
+
+        Object.assign(item, updatedValues);
+        if (typeConfig.id === "book") {
+          syncBookLengthFields(item);
+        }
+        applyAutomatedDates(item, { setUpdated: true });
+        saveState();
+        closeModal();
+        renderApp();
+      });
     }
 
     function wireFormEvents(typeConfig) {
@@ -977,176 +1162,51 @@
 
       state[typeConfig.id].forEach((item) => {
         const progress = calculateProgress(item, typeConfig);
-        const isBook = typeConfig.id === "book";
-        const bookFormat = item.bookFormat || "physical";
-        const audioDuration = item.audioDuration || formatMinutesToTime(item.lengthTotal || 0);
-        const audioCompleted = item.audioCompleted || formatMinutesToTime(item.lengthCompleted || 0);
-        const lengthFields = isBook
-          ? `
-            <div>
-              <label>Book format</label>
-              <select data-field="bookFormat" data-id="${item.id}">
-                <option value="physical">Physical book (pages)</option>
-                <option value="audio">Audio book (HH:MM)</option>
-              </select>
-            </div>
-            <div class="book-format-fields" data-format="physical">
-              <label>Page count</label>
-              <input data-field="pageCount" data-id="${item.id}" type="number" min="0" value="${item.pageCount || item.lengthTotal || ""}" />
-            </div>
-            <div class="book-format-fields" data-format="physical">
-              <label>Pages completed</label>
-              <input data-field="pagesCompleted" data-id="${item.id}" type="number" min="0" value="${item.pagesCompleted || item.lengthCompleted || ""}" />
-            </div>
-            <div class="book-format-fields" data-format="audio">
-              <label>Audio duration (HH:MM)</label>
-              <input data-field="audioDuration" data-id="${item.id}" type="time" step="60" value="${audioDuration}" />
-            </div>
-            <div class="book-format-fields" data-format="audio">
-              <label>Audio completed (HH:MM)</label>
-              <input data-field="audioCompleted" data-id="${item.id}" type="time" step="60" value="${audioCompleted}" />
-            </div>
-          `
-          : `
-            <div>
-              <label>Total length</label>
-              <input data-field="lengthTotal" data-id="${item.id}" type="number" min="0" value="${item.lengthTotal || ""}" />
-            </div>
-            <div>
-              <label>Completed length</label>
-              <input data-field="lengthCompleted" data-id="${item.id}" type="number" min="0" value="${item.lengthCompleted || ""}" />
-            </div>
-            <div>
-              <label>Length unit</label>
-              <input data-field="lengthUnit" data-id="${item.id}" value="${item.lengthUnit || ""}" />
-            </div>
-          `;
         const card = document.createElement("div");
-        card.className = "media-item";
+        card.className = "media-compact-card";
         card.innerHTML = `
-          <div class="media-header">
+          ${getCoverMarkup(item.cover, item.name)}
+          <div class="media-compact-header">
             <h4>${item.name || "Untitled"}</h4>
-            <select data-field="status" data-id="${item.id}">
-              <option value="finished">${typeConfig.statusLabels.finished}</option>
-              <option value="current">${typeConfig.statusLabels.current}</option>
-              <option value="wish">${typeConfig.statusLabels.wish}</option>
-            </select>
+            <span class="pill">${typeConfig.statusLabels[item.status] || typeConfig.statusLabels.wish}</span>
           </div>
-          <div class="grid two">
-            <div>
-              <label>Name</label>
-              <input data-field="name" data-id="${item.id}" value="${item.name || ""}" />
-            </div>
-            <div>
-              <label>Rating</label>
-              <input data-field="rating" data-id="${item.id}" type="number" min="0" max="5" step="0.5" value="${item.rating || ""}" />
-            </div>
-            <div>
-              <label>Summary</label>
-              <textarea data-field="summary" data-id="${item.id}">${item.summary || ""}</textarea>
-            </div>
-            <div>
-              <label>Cover art</label>
-              <input data-field="cover" data-id="${item.id}" value="${item.cover || ""}" />
-            </div>
-            ${lengthFields}
-            <div>
-              <label>Genres</label>
-              <input data-field="genres" data-id="${item.id}" value="${item.genres || ""}" />
-            </div>
-            <div>
-              <label>Contributors</label>
-              <input data-field="contributors" data-id="${item.id}" value="${item.contributors || ""}" />
-            </div>
-            <div>
-              <label>Notes</label>
-              <textarea data-field="notes" data-id="${item.id}">${item.notes || ""}</textarea>
-            </div>
-            <div>
-              <label>Review</label>
-              <textarea data-field="review" data-id="${item.id}">${item.review || ""}</textarea>
-            </div>
-            <div>
-              <label>Date added</label>
-              <input data-auto-field="dateAdded" data-id="${item.id}" type="date" value="${item.dateAdded || ""}" readonly />
-            </div>
-            <div>
-              <label>Date started</label>
-              <input data-auto-field="dateStarted" data-id="${item.id}" type="date" value="${item.dateStarted || ""}" readonly />
-            </div>
-            <div>
-              <label>Date finished</label>
-              <input data-auto-field="dateFinished" data-id="${item.id}" type="date" value="${item.dateFinished || ""}" readonly />
-            </div>
-            <div>
-              <label>Date reviewed</label>
-              <input data-auto-field="dateReviewed" data-id="${item.id}" type="date" value="${item.dateReviewed || ""}" readonly />
-            </div>
-            <div>
-              <label>Date updated</label>
-              <input data-auto-field="dateUpdated" data-id="${item.id}" type="date" value="${item.dateUpdated || ""}" readonly />
-            </div>
-            <div>
-              <label>Publication / Production date</label>
-              <input data-field="datePublished" data-id="${item.id}" type="date" value="${item.datePublished || ""}" />
-            </div>
-          </div>
+          <p>${item.summary || "No summary yet."}</p>
           <div class="progress"><span style="width:${progress}%"></span></div>
           <div class="pill">${progress}% complete</div>
           <div class="button-row">
+            <button class="ghost" data-action="edit" data-id="${item.id}">View / Edit</button>
             <button class="ghost" data-action="delete" data-id="${item.id}">Delete</button>
           </div>
         `;
-        const select = card.querySelector("select[data-field='status']");
-        if (select) {
-          select.value = item.status || "wish";
-        }
-        const formatSelect = card.querySelector("select[data-field='bookFormat']");
-        if (formatSelect) {
-          formatSelect.value = bookFormat;
-        }
-        wireBookFormatToggles(card);
         listContainer.appendChild(card);
       });
 
-      listContainer.addEventListener("input", handleListInput);
-      listContainer.addEventListener("change", handleListInput);
       listContainer.addEventListener("click", handleListClick);
-    }
-
-    function handleListInput(event) {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      const field = target.getAttribute("data-field");
-      const id = target.getAttribute("data-id");
-      if (!field || !id) return;
-
-      const typeId = activeTab;
-      const item = state[typeId].find((entry) => entry.id === id);
-      if (!item) return;
-
-      item[field] = target.value;
-      if (typeId === "book") {
-        syncBookLengthFields(item);
-      }
-      applyAutomatedDates(item, { setUpdated: true });
-      refreshAutomatedDateFields(item);
-      saveState();
-      renderDashboard();
     }
 
     function handleListClick(event) {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
-      if (target.getAttribute("data-action") !== "delete") return;
 
       const id = target.getAttribute("data-id");
       if (!id) return;
+      const action = target.getAttribute("data-action");
 
       const typeId = activeTab;
-      state[typeId] = state[typeId].filter((item) => item.id !== id);
-      saveState();
-      renderApp();
+      if (action === "edit") {
+        const item = state[typeId].find((entry) => entry.id === id);
+        const typeConfig = MEDIA_TYPES.find((type) => type.id === typeId);
+        if (item && typeConfig) {
+          openEditModal(typeConfig, item);
+        }
+        return;
+      }
+
+      if (action === "delete") {
+        state[typeId] = state[typeId].filter((item) => item.id !== id);
+        saveState();
+        renderApp();
+      }
     }
 
     function renderApp() {
