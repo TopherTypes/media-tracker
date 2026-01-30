@@ -172,12 +172,14 @@
     .pill {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       padding: 6px 12px;
       border-radius: 999px;
       background: var(--surface-2);
       color: var(--muted);
       border: 1px solid var(--border);
       font-size: 0.8rem;
+      text-align: center;
     }
 
     .media-list {
@@ -231,20 +233,24 @@
     }
 
     /* Keep media previews compact within cards so they don't overwhelm the layout. */
+    /* Center cover artwork and preserve the full image without cropping. */
     .media-cover {
       width: min(140px, 100%);
       aspect-ratio: 3 / 4;
       border-radius: 10px;
-      overflow: hidden;
       background: var(--surface-2);
       border: 1px solid var(--border);
-      justify-self: start;
+      justify-self: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .media-cover img {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
+      object-position: center;
       display: block;
     }
 
@@ -272,6 +278,37 @@
       height: 100%;
       background: var(--success);
       width: 0;
+    }
+
+    /* Combined progress bar and label for a single compact footprint. */
+    .progress-pill {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      height: 28px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      font-size: 0.78rem;
+      color: var(--text);
+    }
+
+    .progress-pill .progress-fill {
+      position: absolute;
+      inset: 0;
+      width: 0;
+      background: var(--success);
+      transition: width 0.2s ease;
+    }
+
+    .progress-pill .progress-label {
+      position: relative;
+      z-index: 1;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     }
 
     .dashboard-grid {
@@ -411,11 +448,11 @@
         </div>
         <div class="card" id="monthly-overview">
           <h3>Monthly completion overview</h3>
-          <div id="monthly-list" class="media-list"></div>
+          <div id="monthly-list" class="media-grid"></div>
         </div>
         <div class="card" id="genre-mix">
           <h3>Current genre mix</h3>
-          <div id="genre-list" class="media-list"></div>
+          <div id="genre-list" class="media-grid"></div>
         </div>
       </div>
     </section>
@@ -780,8 +817,10 @@
             <span class="pill">${item.typeLabel}</span>
           </div>
           <p>${item.summary || "No summary yet."}</p>
-          <div class="progress"><span style="width:${progress}%"></span></div>
-          <div class="pill">${progress}% complete</div>
+          <div class="progress-pill">
+            <span class="progress-fill" style="width:${progress}%"></span>
+            <span class="progress-label">${progress}% complete</span>
+          </div>
           <div class="pill">Last update: ${formatDate(item.dateUpdated)}</div>
         `;
         container.appendChild(card);
@@ -816,7 +855,7 @@
 
       entries.forEach(([month, totals]) => {
         const card = document.createElement("div");
-        card.className = "media-item";
+        card.className = "media-compact-card";
         const totalText = Object.entries(totals)
           .map(([unit, value]) => `${value} ${unit}`)
           .join(", ");
@@ -852,7 +891,7 @@
 
       entries.slice(0, 12).forEach(([genre, count]) => {
         const card = document.createElement("div");
-        card.className = "media-item";
+        card.className = "media-compact-card";
         card.innerHTML = `
           <div class="media-header">
             <h4>${genre}</h4>
@@ -1121,6 +1160,104 @@
       `;
     }
 
+    function renderProgressUpdateForm(typeConfig, item) {
+      // Render a minimal modal form that only updates the completed progress field.
+      const isBook = typeConfig.id === "book";
+      const bookFormat = item.bookFormat || "physical";
+      let inputId = `progress-${typeConfig.id}-completed`;
+      let labelText = `Completed ${typeConfig.lengthHint}`;
+      let inputType = "number";
+      let inputValue = item.lengthCompleted || "";
+      let inputStep = "1";
+
+      if (isBook && bookFormat === "audio") {
+        inputId = `progress-${typeConfig.id}-audio-completed`;
+        labelText = "Audio completed (HH:MM)";
+        inputType = "time";
+        inputValue = item.audioCompleted || formatMinutesToTime(item.lengthCompleted || 0);
+        inputStep = "60";
+      } else if (isBook) {
+        inputId = `progress-${typeConfig.id}-pages-completed`;
+        labelText = "Pages completed";
+        inputType = "number";
+        inputValue = item.pagesCompleted || item.lengthCompleted || "";
+      }
+
+      return `
+        <form id="progress-form-${typeConfig.id}" class="grid">
+          <input type="hidden" name="id" value="${item.id}" />
+          <div>
+            <label for="${inputId}">${labelText}</label>
+            <input
+              id="${inputId}"
+              name="lengthCompleted"
+              type="${inputType}"
+              value="${inputValue}"
+              step="${inputStep}"
+              min="0"
+              required
+            />
+            <span class="helper-text">Update the completed progress value only.</span>
+          </div>
+          <div class="modal-actions" style="grid-column: 1 / -1;">
+            <button type="submit" class="primary">Update progress</button>
+            <button type="button" class="ghost" id="modal-cancel">Cancel</button>
+          </div>
+        </form>
+      `;
+    }
+
+    function openProgressModal(typeConfig, item) {
+      // Open a simplified modal for updating only the completed progress field.
+      const modalOverlay = document.getElementById("modal-overlay");
+      if (!modalOverlay) return;
+      const modalTitle = document.getElementById("modal-title");
+      const modalBody = document.getElementById("modal-body");
+      if (!modalTitle || !modalBody) return;
+
+      modalTitle.textContent = `Update progress · ${item.name || typeConfig.label.slice(0, -1)}`;
+      modalBody.innerHTML = renderProgressUpdateForm(typeConfig, item);
+      wireProgressFormEvents(typeConfig, item.id);
+      modalOverlay.classList.add("open");
+      modalOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function wireProgressFormEvents(typeConfig, itemId) {
+      // Persist a targeted progress update without touching other fields.
+      const form = document.getElementById(`progress-form-${typeConfig.id}`);
+      if (!form) return;
+
+      const cancelButton = document.getElementById("modal-cancel");
+      if (cancelButton) {
+        cancelButton.addEventListener("click", () => closeModal());
+      }
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const formData = new FormData(form);
+        const updatedValue = formData.get("lengthCompleted");
+        const item = state[typeConfig.id].find((entry) => entry.id === itemId);
+        if (!item) return;
+
+        if (typeConfig.id === "book") {
+          const bookFormat = item.bookFormat || "physical";
+          if (bookFormat === "audio") {
+            item.audioCompleted = updatedValue;
+          } else {
+            item.pagesCompleted = updatedValue;
+          }
+          syncBookLengthFields(item);
+        } else {
+          item.lengthCompleted = updatedValue;
+        }
+
+        applyAutomatedDates(item, { setUpdated: true });
+        saveState();
+        closeModal();
+        renderApp();
+      });
+    }
+
     function openEditModal(typeConfig, item) {
       // Open the shared modal with a pre-filled edit form for the selected entry.
       const modalOverlay = document.getElementById("modal-overlay");
@@ -1214,10 +1351,13 @@
             <span class="pill">${typeConfig.statusLabels[item.status] || typeConfig.statusLabels.wish}</span>
           </div>
           <p>${item.summary || "No summary yet."}</p>
-          <div class="progress"><span style="width:${progress}%"></span></div>
-          <div class="pill">${progress}% complete</div>
+          <div class="progress-pill">
+            <span class="progress-fill" style="width:${progress}%"></span>
+            <span class="progress-label">${progress}% complete</span>
+          </div>
           <div class="button-row">
             <button class="ghost" data-action="edit" data-id="${item.id}">View / Edit</button>
+            <button class="ghost" data-action="update-progress" data-id="${item.id}">Update progress</button>
             <button class="ghost" data-action="delete" data-id="${item.id}">Delete</button>
           </div>
         `;
@@ -1241,6 +1381,15 @@
         const typeConfig = MEDIA_TYPES.find((type) => type.id === typeId);
         if (item && typeConfig) {
           openEditModal(typeConfig, item);
+        }
+        return;
+      }
+
+      if (action === "update-progress") {
+        const item = state[typeId].find((entry) => entry.id === id);
+        const typeConfig = MEDIA_TYPES.find((type) => type.id === typeId);
+        if (item && typeConfig) {
+          openProgressModal(typeConfig, item);
         }
         return;
       }
