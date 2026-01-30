@@ -194,25 +194,27 @@
       gap: 12px;
     }
 
+    /* Compact grid sizing keeps cards tight and consistent across sections. */
     .media-grid {
       display: grid;
       gap: 12px;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     }
 
     /* Keep book list cards fixed-width so partially filled rows don't stretch. */
     .media-grid.book-grid {
-      grid-template-columns: repeat(auto-fill, 220px);
+      grid-template-columns: repeat(auto-fill, 180px);
       justify-content: start;
     }
 
+    /* Compact card layout: tighter padding, smaller gaps, and readable typography. */
     .media-compact-card {
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px;
+      border-radius: 12px;
+      padding: 10px;
       background: rgba(31, 35, 48, 0.7);
       display: grid;
-      gap: 10px;
+      gap: 8px;
     }
 
     .media-compact-header {
@@ -222,11 +224,17 @@
       gap: 8px;
     }
 
+    .media-compact-header h4 {
+      margin: 0;
+      font-size: 0.95rem;
+      line-height: 1.3;
+    }
+
     /* Keep media previews compact within cards so they don't overwhelm the layout. */
     .media-cover {
-      width: min(180px, 100%);
+      width: min(140px, 100%);
       aspect-ratio: 3 / 4;
-      border-radius: 12px;
+      border-radius: 10px;
       overflow: hidden;
       background: var(--surface-2);
       border: 1px solid var(--border);
@@ -253,7 +261,7 @@
     }
 
     .progress {
-      height: 8px;
+      height: 6px;
       background: var(--surface-2);
       border-radius: 999px;
       overflow: hidden;
@@ -270,6 +278,33 @@
       display: grid;
       gap: 16px;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+
+    /* Compact card content styles for summaries, pills, and action buttons. */
+    .media-compact-card p {
+      margin: 0;
+      font-size: 0.85rem;
+      line-height: 1.4;
+      color: var(--muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .media-compact-card .pill {
+      padding: 4px 10px;
+      font-size: 0.72rem;
+    }
+
+    .media-compact-card .button-row {
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .media-compact-card .button-row .ghost {
+      padding: 6px 10px;
+      font-size: 0.8rem;
     }
 
     .section-header {
