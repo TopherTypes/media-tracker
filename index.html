@@ -719,8 +719,8 @@
 
       if (typeConfig?.id === "tv") {
         return {
-          total: Number(item.numberEpisodes || item.lengthTotal || 0),
-          completed: Number(item.episodesCompleted || item.lengthCompleted || 0),
+          total: getTvTotalEpisodes(item),
+          completed: getTvCompletedEpisodes(item),
           unit: item.lengthUnit || "episodes",
         };
       }
@@ -763,6 +763,72 @@
       return [];
     }
 
+    function getTvTotalEpisodes(item) {
+      // Prefer per-season totals when available to keep progress calculations accurate.
+      const perSeason = normalizeEpisodesPerSeason(item.episodesPerSeason);
+      const seasonTotal = perSeason.reduce((sum, value) => sum + value, 0);
+      const fallbackTotal = Number(item.numberEpisodes || item.lengthTotal || 0);
+      return seasonTotal || fallbackTotal;
+    }
+
+    function estimateAverageEpisodesPerSeason(totalEpisodes, numberSeasons) {
+      // Provide an estimated per-season episode count when detailed breakdowns are missing.
+      if (!totalEpisodes || !numberSeasons) return 0;
+      return totalEpisodes / numberSeasons;
+    }
+
+    function getTvCompletedEpisodes(item) {
+      // Convert a season/episode position into a cumulative episode count for progress tracking.
+      const season = Number(item.currentSeason || 0);
+      const episode = Number(item.currentEpisode || 0);
+      const perSeason = normalizeEpisodesPerSeason(item.episodesPerSeason);
+      if (season > 0 && episode > 0) {
+        if (perSeason.length >= season) {
+          const completedBefore = perSeason.slice(0, season - 1).reduce((sum, value) => sum + value, 0);
+          const seasonTotal = perSeason[season - 1] || 0;
+          const clampedEpisode = seasonTotal ? Math.min(episode, seasonTotal) : episode;
+          return completedBefore + clampedEpisode;
+        }
+        const totalEpisodes = getTvTotalEpisodes(item);
+        const numberSeasons = Number(item.numberSeasons || 0);
+        const estimatedPerSeason = estimateAverageEpisodesPerSeason(totalEpisodes, numberSeasons);
+        if (estimatedPerSeason) {
+          return Math.round((season - 1) * estimatedPerSeason + episode);
+        }
+      }
+      return Number(item.episodesCompleted || item.lengthCompleted || 0);
+    }
+
+    function getTvSeasonEpisodeSnapshot(item) {
+      // Resolve the best season/episode pair for form defaults and legacy progress entries.
+      const explicitSeason = Number(item.currentSeason || 0);
+      const explicitEpisode = Number(item.currentEpisode || 0);
+      if (explicitSeason || explicitEpisode) {
+        return {
+          season: explicitSeason || "",
+          episode: explicitEpisode || "",
+        };
+      }
+
+      const completed = Number(item.episodesCompleted || item.lengthCompleted || 0);
+      const perSeason = normalizeEpisodesPerSeason(item.episodesPerSeason);
+      if (completed > 0 && perSeason.length) {
+        let remaining = completed;
+        for (let index = 0; index < perSeason.length; index += 1) {
+          const seasonTotal = perSeason[index] || 0;
+          if (remaining <= seasonTotal) {
+            return { season: index + 1, episode: remaining };
+          }
+          remaining -= seasonTotal;
+        }
+        const lastSeason = perSeason.length;
+        const lastEpisode = perSeason[lastSeason - 1] || "";
+        return { season: lastSeason, episode: lastEpisode };
+      }
+
+      return { season: "", episode: "" };
+    }
+
     function renderSeasonEpisodeInputs(existingCounts, seasonCount, prefix) {
       // Build the per-season input markup to reuse across create and edit forms.
       if (!seasonCount || seasonCount <= 0) return "";
@@ -787,9 +853,12 @@
     }
 
     function syncTvLengthFields(item) {
-      // Keep TV progress metrics aligned with episode totals and completions.
-      item.lengthTotal = Number(item.numberEpisodes || 0);
-      item.lengthCompleted = Number(item.episodesCompleted || 0);
+      // Keep TV progress metrics aligned with season/episode progress and totals.
+      const totalEpisodes = getTvTotalEpisodes(item);
+      const completedEpisodes = getTvCompletedEpisodes(item);
+      item.lengthTotal = totalEpisodes;
+      item.lengthCompleted = completedEpisodes;
+      item.episodesCompleted = completedEpisodes;
       item.lengthUnit = "episodes";
     }
 
@@ -1325,8 +1394,28 @@
             <span class="helper-text">Total episodes power the progress meter.</span>
           </div>
           <div>
-            <label for="${typeConfig.id}-episodes-completed">Episodes watched</label>
-            <input id="${typeConfig.id}-episodes-completed" name="episodesCompleted" type="number" min="0" />
+            <label for="${typeConfig.id}-current-season">Current season</label>
+            <input
+              id="${typeConfig.id}-current-season"
+              name="currentSeason"
+              type="number"
+              min="1"
+              placeholder="Season #"
+              value=""
+            />
+            <span class="helper-text">Track progress by season and episode instead of total episodes watched.</span>
+          </div>
+          <div>
+            <label for="${typeConfig.id}-current-episode">Current episode</label>
+            <input
+              id="${typeConfig.id}-current-episode"
+              name="currentEpisode"
+              type="number"
+              min="1"
+              placeholder="Episode #"
+              value=""
+            />
+            <span class="helper-text">Use per-season episode totals for the most accurate percentage.</span>
           </div>
           <div>
             <label for="${typeConfig.id}-episode-runtime">Episode runtime (minutes)</label>
@@ -1392,6 +1481,7 @@
       const isBook = typeConfig.id === "book";
       const isTv = typeConfig.id === "tv";
       const parsedEpisodesPerSeason = normalizeEpisodesPerSeason(item.episodesPerSeason);
+      const tvProgressSnapshot = isTv ? getTvSeasonEpisodeSnapshot(item) : null;
       const bookFormat = item.bookFormat || "physical";
       const audioDuration = item.audioDuration || formatMinutesToTime(item.lengthTotal || 0);
       const audioCompleted = item.audioCompleted || formatMinutesToTime(item.lengthCompleted || 0);
@@ -1457,8 +1547,26 @@
             <span class="helper-text">Total episodes power the progress meter.</span>
           </div>
           <div>
-            <label for="edit-${typeConfig.id}-episodes-completed">Episodes watched</label>
-            <input id="edit-${typeConfig.id}-episodes-completed" name="episodesCompleted" type="number" min="0" value="${item.episodesCompleted || item.lengthCompleted || ""}" />
+            <label for="edit-${typeConfig.id}-current-season">Current season</label>
+            <input
+              id="edit-${typeConfig.id}-current-season"
+              name="currentSeason"
+              type="number"
+              min="1"
+              value="${tvProgressSnapshot?.season || ""}"
+            />
+            <span class="helper-text">Track progress by season and episode instead of total episodes watched.</span>
+          </div>
+          <div>
+            <label for="edit-${typeConfig.id}-current-episode">Current episode</label>
+            <input
+              id="edit-${typeConfig.id}-current-episode"
+              name="currentEpisode"
+              type="number"
+              min="1"
+              value="${tvProgressSnapshot?.episode || ""}"
+            />
+            <span class="helper-text">Use per-season episode totals for the most accurate percentage.</span>
           </div>
           <div>
             <label for="edit-${typeConfig.id}-episode-runtime">Episode runtime (minutes)</label>
@@ -1568,11 +1676,42 @@
         labelText = "Pages completed";
         inputType = "number";
         inputValue = item.pagesCompleted || item.lengthCompleted || "";
-      } else if (isTv) {
-        inputId = `progress-${typeConfig.id}-episodes-completed`;
-        labelText = "Episodes watched";
-        inputType = "number";
-        inputValue = item.episodesCompleted || item.lengthCompleted || "";
+      }
+
+      if (isTv) {
+        const tvProgressSnapshot = getTvSeasonEpisodeSnapshot(item);
+        return `
+          <form id="progress-form-${typeConfig.id}" class="grid">
+            <input type="hidden" name="id" value="${item.id}" />
+            <div>
+              <label for="progress-${typeConfig.id}-current-season">Current season</label>
+              <input
+                id="progress-${typeConfig.id}-current-season"
+                name="currentSeason"
+                type="number"
+                min="1"
+                value="${tvProgressSnapshot.season || ""}"
+                required
+              />
+            </div>
+            <div>
+              <label for="progress-${typeConfig.id}-current-episode">Current episode</label>
+              <input
+                id="progress-${typeConfig.id}-current-episode"
+                name="currentEpisode"
+                type="number"
+                min="1"
+                value="${tvProgressSnapshot.episode || ""}"
+                required
+              />
+              <span class="helper-text">Use per-season episode totals for the most accurate percentage.</span>
+            </div>
+            <div class="modal-actions" style="grid-column: 1 / -1;">
+              <button type="submit" class="primary">Update progress</button>
+              <button type="button" class="ghost" id="modal-cancel">Cancel</button>
+            </div>
+          </form>
+        `;
       }
 
       return `
@@ -1627,11 +1766,11 @@
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         const formData = new FormData(form);
-        const updatedValue = formData.get("lengthCompleted");
         const item = state[typeConfig.id].find((entry) => entry.id === itemId);
         if (!item) return;
 
         if (typeConfig.id === "book") {
+          const updatedValue = formData.get("lengthCompleted");
           const bookFormat = item.bookFormat || "physical";
           if (bookFormat === "audio") {
             item.audioCompleted = updatedValue;
@@ -1640,9 +1779,13 @@
           }
           syncBookLengthFields(item);
         } else if (typeConfig.id === "tv") {
-          item.episodesCompleted = updatedValue;
+          const updatedSeason = formData.get("currentSeason");
+          const updatedEpisode = formData.get("currentEpisode");
+          item.currentSeason = updatedSeason;
+          item.currentEpisode = updatedEpisode;
           syncTvLengthFields(item);
         } else {
+          const updatedValue = formData.get("lengthCompleted");
           item.lengthCompleted = updatedValue;
         }
 
