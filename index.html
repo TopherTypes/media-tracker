@@ -1,3 +1,835 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Media Tracker</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115;
+      --surface: #181b22;
+      --surface-2: #1f2330;
+      --text: #f3f4f6;
+      --muted: #a3a8b8;
+      --primary: #7dd3fc;
+      --accent: #a78bfa;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --border: #2a2f3b;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      --radius: 16px;
+    }
 
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    header {
+      padding: 28px clamp(16px, 4vw, 48px);
+      background: linear-gradient(135deg, rgba(125, 211, 252, 0.2), rgba(167, 139, 250, 0.2));
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 40px);
+      letter-spacing: 0.5px;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .app {
+      padding: 24px clamp(16px, 4vw, 48px) 48px;
+      display: grid;
+      gap: 24px;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .tab-button {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      padding: 10px 18px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tab-button.active {
+      background: var(--primary);
+      color: #0b1120;
+      border-color: transparent;
+      box-shadow: var(--shadow);
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+
+    .card h2,
+    .card h3 {
+      margin-top: 0;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+
+    label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #120b24;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 16px;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+
+    .media-list {
+      display: grid;
+      gap: 16px;
+    }
+
+    .media-item {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      background: rgba(31, 35, 48, 0.7);
+      display: grid;
+      gap: 12px;
+    }
+
+    .media-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .media-header h4 {
+      margin: 0;
+    }
+
+    .progress {
+      height: 8px;
+      background: var(--surface-2);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress > span {
+      display: block;
+      height: 100%;
+      background: var(--success);
+      width: 0;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+
+    .empty {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 720px) {
+      header {
+        padding-bottom: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Media Tracker</h1>
+    <p>Track your reading, watching, playing, and viewing journey with a sleek dashboard.</p>
+  </header>
+
+  <main class="app">
+    <section class="card" aria-label="navigation">
+      <div class="tabs" id="tabs"></div>
+      <div class="button-row">
+        <span class="pill" id="save-status">Auto-save active (every 30s)</span>
+      </div>
+    </section>
+
+    <section class="card" id="dashboard">
+      <h2>Dashboard</h2>
+      <div class="dashboard-grid">
+        <div class="card" id="in-progress">
+          <h3>Currently in progress</h3>
+          <div id="in-progress-list" class="media-list"></div>
+        </div>
+        <div class="card" id="monthly-overview">
+          <h3>Monthly completion overview</h3>
+          <div id="monthly-list" class="media-list"></div>
+        </div>
+        <div class="card" id="genre-mix">
+          <h3>Current genre mix</h3>
+          <div id="genre-list" class="media-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="sections"></section>
+  </main>
+
+  <footer class="footer">
+    Built with local browser storage. Your data stays on this device.
+  </footer>
+
+  <script>
+    // -----------------------------
+    // Data definitions and helpers
+    // -----------------------------
+    const MEDIA_TYPES = [
+      {
+        id: "book",
+        label: "Books",
+        statusLabels: {
+          finished: "Finished Reading",
+          current: "Currently Reading",
+          wish: "Want to Read",
+        },
+        lengthHint: "Pages",
+      },
+      {
+        id: "film",
+        label: "Films",
+        statusLabels: {
+          finished: "Finished Watching",
+          current: "Currently Watching",
+          wish: "Want to Watch",
+        },
+        lengthHint: "Hours/Minutes",
+      },
+      {
+        id: "tv",
+        label: "TV Series",
+        statusLabels: {
+          finished: "Finished Watching",
+          current: "Currently Watching",
+          wish: "Want to Watch",
+        },
+        lengthHint: "Seasons/Episodes",
+      },
+      {
+        id: "play",
+        label: "Plays",
+        statusLabels: {
+          finished: "Finished Seeing",
+          current: "Currently Seeing",
+          wish: "Want to See",
+        },
+        lengthHint: "Acts/Minutes",
+      },
+      {
+        id: "game",
+        label: "Games",
+        statusLabels: {
+          finished: "Finished Playing",
+          current: "Currently Playing",
+          wish: "Want to Play",
+        },
+        lengthHint: "Hours/Levels",
+      },
+      {
+        id: "online",
+        label: "Online Videos",
+        statusLabels: {
+          finished: "Finished Watching",
+          current: "Currently Watching",
+          wish: "Want to Watch",
+        },
+        lengthHint: "Minutes",
+      },
+    ];
+
+    const STORAGE_KEY = "media-tracker-state";
+    const AUTO_SAVE_INTERVAL_MS = 30000;
+
+    // Default empty state for all media types.
+    const initialState = MEDIA_TYPES.reduce((acc, type) => {
+      acc[type.id] = [];
+      return acc;
+    }, {});
+
+    let state = loadState();
+    let activeTab = "dashboard";
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          return JSON.parse(raw);
+        }
+      } catch (error) {
+        console.warn("Failed to load saved state", error);
+      }
+      return structuredClone(initialState);
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        updateSaveStatus();
+      } catch (error) {
+        console.warn("Failed to save state", error);
+      }
+    }
+
+    function updateSaveStatus() {
+      const saveStatus = document.getElementById("save-status");
+      const now = new Date();
+      saveStatus.textContent = `Last saved ${now.toLocaleTimeString()}`;
+    }
+
+    function formatDate(dateValue) {
+      if (!dateValue) return "Not set";
+      return new Date(dateValue).toLocaleDateString();
+    }
+
+    function calculateProgress(item) {
+      const total = Number(item.lengthTotal || 0);
+      const completed = Number(item.lengthCompleted || 0);
+      if (!total || total <= 0) return 0;
+      return Math.min(100, Math.round((completed / total) * 100));
+    }
+
+    function parseGenres(genresString) {
+      return genresString
+        .split(",")
+        .map((genre) => genre.trim())
+        .filter(Boolean);
+    }
+
+    function getTimeSinceUpdate(item) {
+      const date = item.dateUpdated || item.dateAdded || item.dateStarted || item.dateFinished;
+      if (!date) return Infinity;
+      return Date.now() - new Date(date).getTime();
+    }
+
+    function generateId() {
+      return crypto.randomUUID();
+    }
+
+    // ---------------------------------
+    // UI rendering helpers
+    // ---------------------------------
+    function renderTabs() {
+      const tabs = document.getElementById("tabs");
+      tabs.innerHTML = "";
+
+      const dashboardButton = createTabButton("Dashboard", "dashboard");
+      tabs.appendChild(dashboardButton);
+
+      MEDIA_TYPES.forEach((type) => {
+        tabs.appendChild(createTabButton(type.label, type.id));
+      });
+    }
+
+    function createTabButton(label, id) {
+      const button = document.createElement("button");
+      button.className = `tab-button ${activeTab === id ? "active" : ""}`;
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", () => {
+        activeTab = id;
+        renderApp();
+      });
+      return button;
+    }
+
+    function renderDashboard() {
+      renderInProgress();
+      renderMonthlyOverview();
+      renderGenreMix();
+    }
+
+    function renderInProgress() {
+      const container = document.getElementById("in-progress-list");
+      const inProgressItems = MEDIA_TYPES.flatMap((type) =>
+        state[type.id]
+          .filter((item) => item.status === "current")
+          .map((item) => ({ ...item, typeLabel: type.label }))
+      ).sort((a, b) => getTimeSinceUpdate(b) - getTimeSinceUpdate(a));
+
+      container.innerHTML = "";
+
+      if (inProgressItems.length === 0) {
+        container.innerHTML = '<p class="empty">No media currently in progress.</p>';
+        return;
+      }
+
+      inProgressItems.forEach((item) => {
+        const progress = calculateProgress(item);
+        const card = document.createElement("div");
+        card.className = "media-item";
+        card.innerHTML = `
+          <div class="media-header">
+            <h4>${item.name || "Untitled"}</h4>
+            <span class="pill">${item.typeLabel}</span>
+          </div>
+          <p>${item.summary || "No summary yet."}</p>
+          <div class="progress"><span style="width:${progress}%"></span></div>
+          <div class="pill">${progress}% complete</div>
+          <div class="pill">Last update: ${formatDate(item.dateUpdated)}</div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderMonthlyOverview() {
+      const container = document.getElementById("monthly-list");
+      const monthlyTotals = {};
+
+      MEDIA_TYPES.forEach((type) => {
+        state[type.id]
+          .filter((item) => item.status === "finished" && item.dateFinished)
+          .forEach((item) => {
+            const date = new Date(item.dateFinished);
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+            monthlyTotals[key] ??= {};
+            const unit = item.lengthUnit || type.lengthHint;
+            const completed = Number(item.lengthCompleted || 0);
+            monthlyTotals[key][unit] = (monthlyTotals[key][unit] || 0) + completed;
+          });
+      });
+
+      const entries = Object.entries(monthlyTotals).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+      container.innerHTML = "";
+
+      if (entries.length === 0) {
+        container.innerHTML = '<p class="empty">Finish items to see monthly totals.</p>';
+        return;
+      }
+
+      entries.forEach(([month, totals]) => {
+        const card = document.createElement("div");
+        card.className = "media-item";
+        const totalText = Object.entries(totals)
+          .map(([unit, value]) => `${value} ${unit}`)
+          .join(", ");
+        card.innerHTML = `
+          <div class="media-header">
+            <h4>${month}</h4>
+          </div>
+          <p>${totalText}</p>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderGenreMix() {
+      const container = document.getElementById("genre-list");
+      const genreCounts = {};
+
+      MEDIA_TYPES.forEach((type) => {
+        state[type.id].forEach((item) => {
+          parseGenres(item.genres || "").forEach((genre) => {
+            genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+          });
+        });
+      });
+
+      const entries = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]);
+      container.innerHTML = "";
+
+      if (entries.length === 0) {
+        container.innerHTML = '<p class="empty">Add genres to see your mix.</p>';
+        return;
+      }
+
+      entries.slice(0, 12).forEach(([genre, count]) => {
+        const card = document.createElement("div");
+        card.className = "media-item";
+        card.innerHTML = `
+          <div class="media-header">
+            <h4>${genre}</h4>
+            <span class="pill">${count} items</span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderSections() {
+      const container = document.getElementById("sections");
+
+      if (activeTab === "dashboard") {
+        container.innerHTML = "";
+        return;
+      }
+
+      const typeConfig = MEDIA_TYPES.find((type) => type.id === activeTab);
+      if (!typeConfig) return;
+
+      container.innerHTML = `
+        <h2>${typeConfig.label}</h2>
+        <p class="pill">Suggested length unit: ${typeConfig.lengthHint}</p>
+        <div class="grid two">
+          <div class="card">
+            <h3>Add new ${typeConfig.label.slice(0, -1)}</h3>
+            ${renderForm(typeConfig)}
+          </div>
+          <div class="card">
+            <h3>${typeConfig.label} list</h3>
+            <div class="media-list" id="list-${typeConfig.id}"></div>
+          </div>
+        </div>
+      `;
+
+      wireFormEvents(typeConfig);
+      renderMediaList(typeConfig);
+    }
+
+    function renderForm(typeConfig) {
+      // Render the form HTML for adding new items.
+      return `
+        <form id="form-${typeConfig.id}" class="grid two">
+          <div>
+            <label for="${typeConfig.id}-name">Name</label>
+            <input id="${typeConfig.id}-name" name="name" placeholder="Title" required />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-status">Status</label>
+            <select id="${typeConfig.id}-status" name="status">
+              <option value="finished">${typeConfig.statusLabels.finished}</option>
+              <option value="current">${typeConfig.statusLabels.current}</option>
+              <option value="wish">${typeConfig.statusLabels.wish}</option>
+            </select>
+          </div>
+          <div>
+            <label for="${typeConfig.id}-summary">Summary</label>
+            <textarea id="${typeConfig.id}-summary" name="summary" placeholder="Short synopsis"></textarea>
+          </div>
+          <div>
+            <label for="${typeConfig.id}-cover">Photo / Poster / Cover</label>
+            <input id="${typeConfig.id}-cover" name="cover" placeholder="Image URL" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-length-total">Total length (${typeConfig.lengthHint})</label>
+            <input id="${typeConfig.id}-length-total" name="lengthTotal" type="number" min="0" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-length-completed">Completed length</label>
+            <input id="${typeConfig.id}-length-completed" name="lengthCompleted" type="number" min="0" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-length-unit">Length unit</label>
+            <input id="${typeConfig.id}-length-unit" name="lengthUnit" placeholder="pages, hours, episodes" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-rating">Rating (0-5)</label>
+            <input id="${typeConfig.id}-rating" name="rating" type="number" min="0" max="5" step="0.5" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-genres">Genres</label>
+            <input id="${typeConfig.id}-genres" name="genres" placeholder="Comma-separated" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-contributors">Authors / Directors / Actors</label>
+            <input id="${typeConfig.id}-contributors" name="contributors" placeholder="People involved" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-notes">Personal notes</label>
+            <textarea id="${typeConfig.id}-notes" name="notes"></textarea>
+          </div>
+          <div>
+            <label for="${typeConfig.id}-review">Personal review</label>
+            <textarea id="${typeConfig.id}-review" name="review"></textarea>
+          </div>
+          <div>
+            <label for="${typeConfig.id}-date-added">Date added</label>
+            <input id="${typeConfig.id}-date-added" name="dateAdded" type="date" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-date-started">Date started</label>
+            <input id="${typeConfig.id}-date-started" name="dateStarted" type="date" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-date-finished">Date finished</label>
+            <input id="${typeConfig.id}-date-finished" name="dateFinished" type="date" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-date-reviewed">Date reviewed</label>
+            <input id="${typeConfig.id}-date-reviewed" name="dateReviewed" type="date" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-date-updated">Date updated</label>
+            <input id="${typeConfig.id}-date-updated" name="dateUpdated" type="date" />
+          </div>
+          <div>
+            <label for="${typeConfig.id}-date-published">Publication / Production date</label>
+            <input id="${typeConfig.id}-date-published" name="datePublished" type="date" />
+          </div>
+          <div class="button-row" style="grid-column: 1 / -1;">
+            <button type="submit" class="primary">Add ${typeConfig.label.slice(0, -1)}</button>
+            <button type="reset" class="ghost">Clear</button>
+          </div>
+        </form>
+      `;
+    }
+
+    function wireFormEvents(typeConfig) {
+      const form = document.getElementById(`form-${typeConfig.id}`);
+      if (!form) return;
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const formData = new FormData(form);
+        const item = Object.fromEntries(formData.entries());
+        item.id = generateId();
+        item.createdAt = new Date().toISOString();
+        state[typeConfig.id].push(item);
+        form.reset();
+        saveState();
+        renderApp();
+      });
+    }
+
+    function renderMediaList(typeConfig) {
+      const listContainer = document.getElementById(`list-${typeConfig.id}`);
+      if (!listContainer) return;
+
+      listContainer.innerHTML = "";
+
+      if (state[typeConfig.id].length === 0) {
+        listContainer.innerHTML = '<p class="empty">No entries yet.</p>';
+        return;
+      }
+
+      state[typeConfig.id].forEach((item) => {
+        const progress = calculateProgress(item);
+        const card = document.createElement("div");
+        card.className = "media-item";
+        card.innerHTML = `
+          <div class="media-header">
+            <h4>${item.name || "Untitled"}</h4>
+            <select data-field="status" data-id="${item.id}">
+              <option value="finished">${typeConfig.statusLabels.finished}</option>
+              <option value="current">${typeConfig.statusLabels.current}</option>
+              <option value="wish">${typeConfig.statusLabels.wish}</option>
+            </select>
+          </div>
+          <div class="grid two">
+            <div>
+              <label>Name</label>
+              <input data-field="name" data-id="${item.id}" value="${item.name || ""}" />
+            </div>
+            <div>
+              <label>Rating</label>
+              <input data-field="rating" data-id="${item.id}" type="number" min="0" max="5" step="0.5" value="${item.rating || ""}" />
+            </div>
+            <div>
+              <label>Summary</label>
+              <textarea data-field="summary" data-id="${item.id}">${item.summary || ""}</textarea>
+            </div>
+            <div>
+              <label>Cover art</label>
+              <input data-field="cover" data-id="${item.id}" value="${item.cover || ""}" />
+            </div>
+            <div>
+              <label>Total length</label>
+              <input data-field="lengthTotal" data-id="${item.id}" type="number" min="0" value="${item.lengthTotal || ""}" />
+            </div>
+            <div>
+              <label>Completed length</label>
+              <input data-field="lengthCompleted" data-id="${item.id}" type="number" min="0" value="${item.lengthCompleted || ""}" />
+            </div>
+            <div>
+              <label>Length unit</label>
+              <input data-field="lengthUnit" data-id="${item.id}" value="${item.lengthUnit || ""}" />
+            </div>
+            <div>
+              <label>Genres</label>
+              <input data-field="genres" data-id="${item.id}" value="${item.genres || ""}" />
+            </div>
+            <div>
+              <label>Contributors</label>
+              <input data-field="contributors" data-id="${item.id}" value="${item.contributors || ""}" />
+            </div>
+            <div>
+              <label>Notes</label>
+              <textarea data-field="notes" data-id="${item.id}">${item.notes || ""}</textarea>
+            </div>
+            <div>
+              <label>Review</label>
+              <textarea data-field="review" data-id="${item.id}">${item.review || ""}</textarea>
+            </div>
+            <div>
+              <label>Date added</label>
+              <input data-field="dateAdded" data-id="${item.id}" type="date" value="${item.dateAdded || ""}" />
+            </div>
+            <div>
+              <label>Date started</label>
+              <input data-field="dateStarted" data-id="${item.id}" type="date" value="${item.dateStarted || ""}" />
+            </div>
+            <div>
+              <label>Date finished</label>
+              <input data-field="dateFinished" data-id="${item.id}" type="date" value="${item.dateFinished || ""}" />
+            </div>
+            <div>
+              <label>Date reviewed</label>
+              <input data-field="dateReviewed" data-id="${item.id}" type="date" value="${item.dateReviewed || ""}" />
+            </div>
+            <div>
+              <label>Date updated</label>
+              <input data-field="dateUpdated" data-id="${item.id}" type="date" value="${item.dateUpdated || ""}" />
+            </div>
+            <div>
+              <label>Publication / Production date</label>
+              <input data-field="datePublished" data-id="${item.id}" type="date" value="${item.datePublished || ""}" />
+            </div>
+          </div>
+          <div class="progress"><span style="width:${progress}%"></span></div>
+          <div class="pill">${progress}% complete</div>
+          <div class="button-row">
+            <button class="ghost" data-action="delete" data-id="${item.id}">Delete</button>
+          </div>
+        `;
+        const select = card.querySelector("select[data-field='status']");
+        if (select) {
+          select.value = item.status || "wish";
+        }
+        listContainer.appendChild(card);
+      });
+
+      listContainer.addEventListener("input", handleListInput);
+      listContainer.addEventListener("change", handleListInput);
+      listContainer.addEventListener("click", handleListClick);
+    }
+
+    function handleListInput(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const field = target.getAttribute("data-field");
+      const id = target.getAttribute("data-id");
+      if (!field || !id) return;
+
+      const typeId = activeTab;
+      const item = state[typeId].find((entry) => entry.id === id);
+      if (!item) return;
+
+      item[field] = target.value;
+      saveState();
+      renderDashboard();
+    }
+
+    function handleListClick(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.getAttribute("data-action") !== "delete") return;
+
+      const id = target.getAttribute("data-id");
+      if (!id) return;
+
+      const typeId = activeTab;
+      state[typeId] = state[typeId].filter((item) => item.id !== id);
+      saveState();
+      renderApp();
+    }
+
+    function renderApp() {
+      renderTabs();
+      renderDashboard();
+      renderSections();
+    }
+
+    // Initialize the app and set up auto-save.
+    renderApp();
+    setInterval(saveState, AUTO_SAVE_INTERVAL_MS);
+  </script>
+</body>
 </html>
