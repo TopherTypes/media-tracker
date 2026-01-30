@@ -150,6 +150,23 @@
       margin-top: 12px;
     }
 
+    .inline-field-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .inline-field-actions input {
+      flex: 1;
+    }
+
+    .lookup-status {
+      display: block;
+      margin-top: 6px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
     button.primary {
       background: var(--accent);
       color: #120b24;
@@ -784,6 +801,60 @@
       `;
     }
 
+    function formatYearToDateInput(yearValue) {
+      // Convert a year-only value into the date input format (YYYY-MM-DD).
+      if (!yearValue) return "";
+      const year = Number(yearValue);
+      if (Number.isNaN(year)) return "";
+      return `${year}-01-01`;
+    }
+
+    function extractWorkSummary(workData) {
+      // Normalize Open Library description fields into a readable summary.
+      if (!workData) return "";
+      if (typeof workData.description === "string") return workData.description;
+      if (typeof workData.description?.value === "string") return workData.description.value;
+      if (typeof workData.first_sentence === "string") return workData.first_sentence;
+      if (typeof workData.first_sentence?.value === "string") return workData.first_sentence.value;
+      return "";
+    }
+
+    function buildCoverUrl(coverId) {
+      // Build a consistent cover art URL from an Open Library cover id.
+      if (!coverId) return "";
+      return `https://covers.openlibrary.org/b/id/${coverId}-L.jpg`;
+    }
+
+    async function fetchBookLookupByTitle(title) {
+      // Query Open Library for the best matching book details by title.
+      const searchUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&limit=1`;
+      const searchResponse = await fetch(searchUrl);
+      if (!searchResponse.ok) {
+        throw new Error("Unable to reach Open Library search.");
+      }
+
+      const searchData = await searchResponse.json();
+      const topMatch = searchData?.docs?.[0];
+      if (!topMatch) return null;
+
+      const workKey = topMatch.key;
+      let workData = null;
+      if (workKey) {
+        const workResponse = await fetch(`https://openlibrary.org${workKey}.json`);
+        if (workResponse.ok) {
+          workData = await workResponse.json();
+        }
+      }
+
+      return {
+        author: topMatch.author_name?.[0] || "",
+        publicationDate: formatYearToDateInput(topMatch.first_publish_year),
+        genres: workData?.subjects?.slice(0, 6).join(", ") || "",
+        coverUrl: buildCoverUrl(topMatch.cover_i),
+        summary: extractWorkSummary(workData),
+      };
+    }
+
     function renderDashboard() {
       renderInProgress();
       renderMonthlyOverview();
@@ -822,9 +893,22 @@
             <span class="progress-label">${progress}% complete</span>
           </div>
           <div class="pill">Last update: ${formatDate(item.dateUpdated)}</div>
+          <div class="button-row">
+            <button
+              class="ghost"
+              data-action="update-progress"
+              data-id="${item.id}"
+              data-type="${item.typeId}"
+            >
+              Update progress
+            </button>
+          </div>
         `;
         container.appendChild(card);
       });
+
+      // Ensure dashboard actions can be handled via event delegation.
+      container.onclick = handleDashboardClick;
     }
 
     function renderMonthlyOverview() {
@@ -941,7 +1025,15 @@
         <form id="form-${typeConfig.id}" class="grid two">
           <div>
             <label for="${typeConfig.id}-name">Name</label>
+            ${isBook ? `
+            <div class="inline-field-actions">
+              <input id="${typeConfig.id}-name" name="name" placeholder="Title" required />
+              <button type="button" class="ghost" id="book-lookup">Find book info</button>
+            </div>
+            <span class="lookup-status" id="book-lookup-status">Search Open Library to prefill author, publication date, genres, cover art, and summary.</span>
+            ` : `
             <input id="${typeConfig.id}-name" name="name" placeholder="Title" required />
+            `}
           </div>
           <div>
             <label for="${typeConfig.id}-status">Status</label>
@@ -1311,6 +1403,10 @@
         cancelButton.addEventListener("click", () => closeModal());
       }
 
+      if (typeConfig.id === "book") {
+        wireBookLookup(form);
+      }
+
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         const formData = new FormData(form);
@@ -1326,6 +1422,69 @@
         saveState();
         closeModal();
         renderApp();
+      });
+    }
+
+    function setLookupStatus(statusElement, message, isError = false) {
+      // Provide visual feedback for Open Library lookups.
+      if (!statusElement) return;
+      statusElement.textContent = message;
+      statusElement.style.color = isError ? "var(--danger)" : "var(--muted)";
+    }
+
+    function setFieldIfEmpty(field, value) {
+      // Only prefill fields that the user has not already touched.
+      if (!field || !value) return;
+      if (field.value && field.value.trim()) return;
+      field.value = value;
+    }
+
+    function applyBookLookupResult(form, lookupResult) {
+      // Map Open Library lookup results into the add-book form fields.
+      if (!form || !lookupResult) return;
+      setFieldIfEmpty(form.querySelector("[name='contributors']"), lookupResult.author);
+      setFieldIfEmpty(form.querySelector("[name='datePublished']"), lookupResult.publicationDate);
+      setFieldIfEmpty(form.querySelector("[name='genres']"), lookupResult.genres);
+      setFieldIfEmpty(form.querySelector("[name='cover']"), lookupResult.coverUrl);
+      setFieldIfEmpty(form.querySelector("[name='summary']"), lookupResult.summary);
+    }
+
+    function wireBookLookup(form) {
+      // Allow users to search Open Library and prefill core book metadata.
+      const lookupButton = form.querySelector("#book-lookup");
+      const statusLabel = form.querySelector("#book-lookup-status");
+      const titleInput = form.querySelector("#book-name");
+      if (!lookupButton || !statusLabel || !titleInput) return;
+
+      const defaultButtonLabel = lookupButton.textContent;
+
+      lookupButton.addEventListener("click", async () => {
+        const title = titleInput.value.trim();
+        if (!title) {
+          setLookupStatus(statusLabel, "Enter a title to search Open Library.", true);
+          return;
+        }
+
+        lookupButton.disabled = true;
+        lookupButton.textContent = "Searching...";
+        setLookupStatus(statusLabel, "Searching Open Library for book details...");
+
+        try {
+          const lookupResult = await fetchBookLookupByTitle(title);
+          if (!lookupResult) {
+            setLookupStatus(statusLabel, "No results found. Try a different title.", true);
+            return;
+          }
+
+          applyBookLookupResult(form, lookupResult);
+          setLookupStatus(statusLabel, "Book details added. Review and adjust as needed.");
+        } catch (error) {
+          console.warn("Failed to fetch book data", error);
+          setLookupStatus(statusLabel, "Unable to fetch book details right now.", true);
+        } finally {
+          lookupButton.disabled = false;
+          lookupButton.textContent = defaultButtonLabel;
+        }
       });
     }
 
@@ -1398,6 +1557,24 @@
         state[typeId] = state[typeId].filter((item) => item.id !== id);
         saveState();
         renderApp();
+      }
+    }
+
+    function handleDashboardClick(event) {
+      // Handle update progress actions from the dashboard in-progress list.
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const action = target.getAttribute("data-action");
+      if (action !== "update-progress") return;
+
+      const itemId = target.getAttribute("data-id");
+      const typeId = target.getAttribute("data-type");
+      if (!itemId || !typeId) return;
+
+      const typeConfig = MEDIA_TYPES.find((type) => type.id === typeId);
+      const item = state[typeId]?.find((entry) => entry.id === itemId);
+      if (item && typeConfig) {
+        openProgressModal(typeConfig, item);
       }
     }
 
