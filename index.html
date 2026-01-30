@@ -129,6 +129,20 @@
       resize: vertical;
     }
 
+    input[readonly],
+    textarea[readonly] {
+      color: var(--muted);
+      background: rgba(31, 35, 48, 0.5);
+      cursor: not-allowed;
+    }
+
+    .helper-text {
+      display: block;
+      margin-top: 4px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
     .button-row {
       display: flex;
       flex-wrap: wrap;
@@ -451,6 +465,52 @@
     function formatDate(dateValue) {
       if (!dateValue) return "Not set";
       return new Date(dateValue).toLocaleDateString();
+    }
+
+    function getTodayDateString() {
+      // Use a local date-only string to align with date input expectations.
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function applyAutomatedDates(item, { setAdded = false, setUpdated = false } = {}) {
+      // Apply automated date fields based on lifecycle triggers and current values.
+      const today = getTodayDateString();
+
+      if (setAdded && !item.dateAdded) {
+        item.dateAdded = today;
+      }
+
+      if (setUpdated) {
+        item.dateUpdated = today;
+      }
+
+      if (item.status === "current" && !item.dateStarted) {
+        item.dateStarted = today;
+      }
+
+      if (item.status === "finished" && !item.dateFinished) {
+        item.dateFinished = today;
+      }
+
+      if (item.review && item.review.trim() && !item.dateReviewed) {
+        item.dateReviewed = today;
+      }
+    }
+
+    function refreshAutomatedDateFields(item) {
+      // Sync read-only date inputs in the active list view without re-rendering.
+      const listContainer = document.getElementById(`list-${activeTab}`);
+      if (!listContainer) return;
+      const fields = listContainer.querySelectorAll(`[data-auto-field][data-id="${item.id}"]`);
+      fields.forEach((field) => {
+        const fieldName = field.getAttribute("data-auto-field");
+        if (!fieldName) return;
+        field.value = item[fieldName] || "";
+      });
     }
 
     function calculateProgress(item, typeConfig) {
@@ -842,23 +902,28 @@
           </div>
           <div>
             <label for="${typeConfig.id}-date-added">Date added</label>
-            <input id="${typeConfig.id}-date-added" name="dateAdded" type="date" />
+            <input id="${typeConfig.id}-date-added" type="date" readonly value="${getTodayDateString()}" />
+            <span class="helper-text">Auto-set when the entry is created.</span>
           </div>
           <div>
             <label for="${typeConfig.id}-date-started">Date started</label>
-            <input id="${typeConfig.id}-date-started" name="dateStarted" type="date" />
+            <input id="${typeConfig.id}-date-started" type="date" readonly />
+            <span class="helper-text">Auto-set when status changes to in progress.</span>
           </div>
           <div>
             <label for="${typeConfig.id}-date-finished">Date finished</label>
-            <input id="${typeConfig.id}-date-finished" name="dateFinished" type="date" />
+            <input id="${typeConfig.id}-date-finished" type="date" readonly />
+            <span class="helper-text">Auto-set when status changes to completed.</span>
           </div>
           <div>
             <label for="${typeConfig.id}-date-reviewed">Date reviewed</label>
-            <input id="${typeConfig.id}-date-reviewed" name="dateReviewed" type="date" />
+            <input id="${typeConfig.id}-date-reviewed" type="date" readonly />
+            <span class="helper-text">Auto-set when a review is added.</span>
           </div>
           <div>
             <label for="${typeConfig.id}-date-updated">Date updated</label>
-            <input id="${typeConfig.id}-date-updated" name="dateUpdated" type="date" />
+            <input id="${typeConfig.id}-date-updated" type="date" readonly value="${getTodayDateString()}" />
+            <span class="helper-text">Auto-set whenever details change.</span>
           </div>
           <div>
             <label for="${typeConfig.id}-date-published">Publication / Production date</label>
@@ -887,6 +952,7 @@
         const item = Object.fromEntries(formData.entries());
         item.id = generateId();
         item.createdAt = new Date().toISOString();
+        applyAutomatedDates(item, { setAdded: true, setUpdated: true });
         if (typeConfig.id === "book") {
           syncBookLengthFields(item);
         }
@@ -1002,23 +1068,23 @@
             </div>
             <div>
               <label>Date added</label>
-              <input data-field="dateAdded" data-id="${item.id}" type="date" value="${item.dateAdded || ""}" />
+              <input data-auto-field="dateAdded" data-id="${item.id}" type="date" value="${item.dateAdded || ""}" readonly />
             </div>
             <div>
               <label>Date started</label>
-              <input data-field="dateStarted" data-id="${item.id}" type="date" value="${item.dateStarted || ""}" />
+              <input data-auto-field="dateStarted" data-id="${item.id}" type="date" value="${item.dateStarted || ""}" readonly />
             </div>
             <div>
               <label>Date finished</label>
-              <input data-field="dateFinished" data-id="${item.id}" type="date" value="${item.dateFinished || ""}" />
+              <input data-auto-field="dateFinished" data-id="${item.id}" type="date" value="${item.dateFinished || ""}" readonly />
             </div>
             <div>
               <label>Date reviewed</label>
-              <input data-field="dateReviewed" data-id="${item.id}" type="date" value="${item.dateReviewed || ""}" />
+              <input data-auto-field="dateReviewed" data-id="${item.id}" type="date" value="${item.dateReviewed || ""}" readonly />
             </div>
             <div>
               <label>Date updated</label>
-              <input data-field="dateUpdated" data-id="${item.id}" type="date" value="${item.dateUpdated || ""}" />
+              <input data-auto-field="dateUpdated" data-id="${item.id}" type="date" value="${item.dateUpdated || ""}" readonly />
             </div>
             <div>
               <label>Publication / Production date</label>
@@ -1063,6 +1129,8 @@
       if (typeId === "book") {
         syncBookLengthFields(item);
       }
+      applyAutomatedDates(item, { setUpdated: true });
+      refreshAutomatedDateFields(item);
       saveState();
       renderDashboard();
     }
