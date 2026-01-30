@@ -212,9 +212,72 @@
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     }
 
+    .section-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
     .empty {
       color: var(--muted);
       font-style: italic;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 17, 21, 0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal {
+      width: min(960px, 100%);
+      max-height: 90vh;
+      overflow: auto;
+      background: var(--surface);
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .book-format-fields {
+      background: rgba(31, 35, 48, 0.6);
+      border-radius: 12px;
+      padding: 12px;
+      border: 1px solid var(--border);
     }
 
     .footer {
@@ -265,6 +328,16 @@
     <section class="card" id="sections"></section>
   </main>
 
+  <div class="modal-overlay" id="modal-overlay" aria-hidden="true" aria-label="Add new media">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h3 id="modal-title">Add new</h3>
+        <button type="button" class="ghost" id="modal-close">Close</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
   <footer class="footer">
     Built with local browser storage. Your data stays on this device.
   </footer>
@@ -282,7 +355,7 @@
           current: "Currently Reading",
           wish: "Want to Read",
         },
-        lengthHint: "Pages",
+        lengthHint: "Pages / HH:MM",
       },
       {
         id: "film",
@@ -380,9 +453,8 @@
       return new Date(dateValue).toLocaleDateString();
     }
 
-    function calculateProgress(item) {
-      const total = Number(item.lengthTotal || 0);
-      const completed = Number(item.lengthCompleted || 0);
+    function calculateProgress(item, typeConfig) {
+      const { total, completed } = getProgressSnapshot(item, typeConfig);
       if (!total || total <= 0) return 0;
       return Math.min(100, Math.round((completed / total) * 100));
     }
@@ -402,6 +474,57 @@
 
     function generateId() {
       return crypto.randomUUID();
+    }
+
+    function parseTimeToMinutes(timeValue) {
+      if (!timeValue) return 0;
+      const [hours, minutes] = timeValue.split(":").map((part) => Number(part));
+      if (Number.isNaN(hours) || Number.isNaN(minutes)) return 0;
+      return hours * 60 + minutes;
+    }
+
+    function formatMinutesToTime(totalMinutes) {
+      if (totalMinutes === null || totalMinutes === undefined || totalMinutes === "") return "";
+      const safeMinutes = Number(totalMinutes);
+      if (Number.isNaN(safeMinutes) || safeMinutes < 0) return "";
+      const hours = Math.floor(safeMinutes / 60);
+      const minutes = safeMinutes % 60;
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    }
+
+    function getProgressSnapshot(item, typeConfig) {
+      // Derive consistent progress metrics across media types, including book formats.
+      if (typeConfig?.id === "book") {
+        const format = item.bookFormat || "physical";
+        if (format === "audio") {
+          const total = parseTimeToMinutes(item.audioDuration) || Number(item.lengthTotal || 0);
+          const completed = parseTimeToMinutes(item.audioCompleted) || Number(item.lengthCompleted || 0);
+          return { total, completed, unit: "minutes" };
+        }
+        const total = Number(item.pageCount || item.lengthTotal || 0);
+        const completed = Number(item.pagesCompleted || item.lengthCompleted || 0);
+        return { total, completed, unit: "pages" };
+      }
+
+      return {
+        total: Number(item.lengthTotal || 0),
+        completed: Number(item.lengthCompleted || 0),
+        unit: item.lengthUnit || typeConfig?.lengthHint || "",
+      };
+    }
+
+    function syncBookLengthFields(item) {
+      // Keep book-specific inputs aligned with generic length data for analytics.
+      const format = item.bookFormat || "physical";
+      if (format === "audio") {
+        item.lengthTotal = parseTimeToMinutes(item.audioDuration);
+        item.lengthCompleted = parseTimeToMinutes(item.audioCompleted);
+        item.lengthUnit = "minutes";
+      } else {
+        item.lengthTotal = Number(item.pageCount || 0);
+        item.lengthCompleted = Number(item.pagesCompleted || 0);
+        item.lengthUnit = "pages";
+      }
     }
 
     // ---------------------------------
@@ -431,6 +554,59 @@
       return button;
     }
 
+    function toggleDashboardVisibility() {
+      // Only surface the dashboard content when the dashboard tab is active.
+      const dashboard = document.getElementById("dashboard");
+      if (!dashboard) return;
+      dashboard.style.display = activeTab === "dashboard" ? "block" : "none";
+    }
+
+    function openModal(typeConfig) {
+      const modalOverlay = document.getElementById("modal-overlay");
+      if (!modalOverlay) return;
+      renderModal(typeConfig);
+      modalOverlay.classList.add("open");
+      modalOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function closeModal() {
+      const modalOverlay = document.getElementById("modal-overlay");
+      const modalBody = document.getElementById("modal-body");
+      if (!modalOverlay) return;
+      modalOverlay.classList.remove("open");
+      modalOverlay.setAttribute("aria-hidden", "true");
+      if (modalBody) {
+        modalBody.innerHTML = "";
+      }
+    }
+
+    function renderModal(typeConfig) {
+      const modalTitle = document.getElementById("modal-title");
+      const modalBody = document.getElementById("modal-body");
+      if (!modalTitle || !modalBody) return;
+
+      modalTitle.textContent = `Add new ${typeConfig.label.slice(0, -1)}`;
+      modalBody.innerHTML = renderForm(typeConfig);
+      wireFormEvents(typeConfig);
+      wireBookFormatToggles(modalBody);
+    }
+
+    function wireBookFormatToggles(rootElement) {
+      if (!rootElement) return;
+      const formatSelect = rootElement.querySelector("[data-field='bookFormat'], select[name='bookFormat']");
+      if (!formatSelect) return;
+
+      const updateVisibility = () => {
+        const formatValue = formatSelect.value || "physical";
+        rootElement.querySelectorAll("[data-format]").forEach((group) => {
+          group.style.display = group.getAttribute("data-format") === formatValue ? "block" : "none";
+        });
+      };
+
+      formatSelect.addEventListener("change", updateVisibility);
+      updateVisibility();
+    }
+
     function renderDashboard() {
       renderInProgress();
       renderMonthlyOverview();
@@ -442,7 +618,7 @@
       const inProgressItems = MEDIA_TYPES.flatMap((type) =>
         state[type.id]
           .filter((item) => item.status === "current")
-          .map((item) => ({ ...item, typeLabel: type.label }))
+          .map((item) => ({ ...item, typeLabel: type.label, typeId: type.id }))
       ).sort((a, b) => getTimeSinceUpdate(b) - getTimeSinceUpdate(a));
 
       container.innerHTML = "";
@@ -453,7 +629,8 @@
       }
 
       inProgressItems.forEach((item) => {
-        const progress = calculateProgress(item);
+        const typeConfig = MEDIA_TYPES.find((type) => type.id === item.typeId);
+        const progress = calculateProgress(item, typeConfig);
         const card = document.createElement("div");
         card.className = "media-item";
         card.innerHTML = `
@@ -481,9 +658,10 @@
             const date = new Date(item.dateFinished);
             const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
             monthlyTotals[key] ??= {};
-            const unit = item.lengthUnit || type.lengthHint;
-            const completed = Number(item.lengthCompleted || 0);
-            monthlyTotals[key][unit] = (monthlyTotals[key][unit] || 0) + completed;
+            const snapshot = getProgressSnapshot(item, type);
+            if (!snapshot.completed) return;
+            const unit = snapshot.unit || type.lengthHint;
+            monthlyTotals[key][unit] = (monthlyTotals[key][unit] || 0) + snapshot.completed;
           });
       });
 
@@ -556,26 +734,29 @@
       if (!typeConfig) return;
 
       container.innerHTML = `
-        <h2>${typeConfig.label}</h2>
-        <p class="pill">Suggested length unit: ${typeConfig.lengthHint}</p>
-        <div class="grid two">
-          <div class="card">
-            <h3>Add new ${typeConfig.label.slice(0, -1)}</h3>
-            ${renderForm(typeConfig)}
+        <div class="section-header">
+          <div>
+            <h2>${typeConfig.label}</h2>
+            <p class="pill">Suggested length unit: ${typeConfig.lengthHint}</p>
           </div>
-          <div class="card">
-            <h3>${typeConfig.label} list</h3>
-            <div class="media-list" id="list-${typeConfig.id}"></div>
-          </div>
+          <button type="button" class="primary" id="add-new-button">Add new</button>
+        </div>
+        <div class="card">
+          <h3>${typeConfig.label} list</h3>
+          <div class="media-list" id="list-${typeConfig.id}"></div>
         </div>
       `;
 
-      wireFormEvents(typeConfig);
+      const addButton = document.getElementById("add-new-button");
+      if (addButton) {
+        addButton.addEventListener("click", () => openModal(typeConfig));
+      }
       renderMediaList(typeConfig);
     }
 
     function renderForm(typeConfig) {
-      // Render the form HTML for adding new items.
+      // Render the form HTML for adding new items inside the modal.
+      const isBook = typeConfig.id === "book";
       return `
         <form id="form-${typeConfig.id}" class="grid two">
           <div>
@@ -598,6 +779,34 @@
             <label for="${typeConfig.id}-cover">Photo / Poster / Cover</label>
             <input id="${typeConfig.id}-cover" name="cover" placeholder="Image URL" />
           </div>
+          ${isBook ? `
+          <div>
+            <label for="${typeConfig.id}-bookFormat">Book format</label>
+            <select id="${typeConfig.id}-bookFormat" name="bookFormat">
+              <option value="physical">Physical book (pages)</option>
+              <option value="audio">Audio book (HH:MM)</option>
+            </select>
+          </div>
+          <div class="book-format-fields" data-format="physical">
+            <label for="${typeConfig.id}-pageCount">Page count</label>
+            <input id="${typeConfig.id}-pageCount" name="pageCount" type="number" min="0" />
+          </div>
+          <div class="book-format-fields" data-format="physical">
+            <label for="${typeConfig.id}-pagesCompleted">Pages completed</label>
+            <input id="${typeConfig.id}-pagesCompleted" name="pagesCompleted" type="number" min="0" />
+          </div>
+          <div class="book-format-fields" data-format="audio">
+            <label for="${typeConfig.id}-audioDuration">Audio duration (HH:MM)</label>
+            <input id="${typeConfig.id}-audioDuration" name="audioDuration" type="time" step="60" />
+          </div>
+          <div class="book-format-fields" data-format="audio">
+            <label for="${typeConfig.id}-audioCompleted">Audio completed (HH:MM)</label>
+            <input id="${typeConfig.id}-audioCompleted" name="audioCompleted" type="time" step="60" />
+          </div>
+          <input type="hidden" name="lengthTotal" />
+          <input type="hidden" name="lengthCompleted" />
+          <input type="hidden" name="lengthUnit" />
+          ` : `
           <div>
             <label for="${typeConfig.id}-length-total">Total length (${typeConfig.lengthHint})</label>
             <input id="${typeConfig.id}-length-total" name="lengthTotal" type="number" min="0" />
@@ -610,6 +819,7 @@
             <label for="${typeConfig.id}-length-unit">Length unit</label>
             <input id="${typeConfig.id}-length-unit" name="lengthUnit" placeholder="pages, hours, episodes" />
           </div>
+          `}
           <div>
             <label for="${typeConfig.id}-rating">Rating (0-5)</label>
             <input id="${typeConfig.id}-rating" name="rating" type="number" min="0" max="5" step="0.5" />
@@ -654,9 +864,9 @@
             <label for="${typeConfig.id}-date-published">Publication / Production date</label>
             <input id="${typeConfig.id}-date-published" name="datePublished" type="date" />
           </div>
-          <div class="button-row" style="grid-column: 1 / -1;">
+          <div class="modal-actions" style="grid-column: 1 / -1;">
             <button type="submit" class="primary">Add ${typeConfig.label.slice(0, -1)}</button>
-            <button type="reset" class="ghost">Clear</button>
+            <button type="button" class="ghost" id="modal-cancel">Cancel</button>
           </div>
         </form>
       `;
@@ -666,15 +876,24 @@
       const form = document.getElementById(`form-${typeConfig.id}`);
       if (!form) return;
 
+      const cancelButton = document.getElementById("modal-cancel");
+      if (cancelButton) {
+        cancelButton.addEventListener("click", () => closeModal());
+      }
+
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         const formData = new FormData(form);
         const item = Object.fromEntries(formData.entries());
         item.id = generateId();
         item.createdAt = new Date().toISOString();
+        if (typeConfig.id === "book") {
+          syncBookLengthFields(item);
+        }
         state[typeConfig.id].push(item);
         form.reset();
         saveState();
+        closeModal();
         renderApp();
       });
     }
@@ -691,7 +910,51 @@
       }
 
       state[typeConfig.id].forEach((item) => {
-        const progress = calculateProgress(item);
+        const progress = calculateProgress(item, typeConfig);
+        const isBook = typeConfig.id === "book";
+        const bookFormat = item.bookFormat || "physical";
+        const audioDuration = item.audioDuration || formatMinutesToTime(item.lengthTotal || 0);
+        const audioCompleted = item.audioCompleted || formatMinutesToTime(item.lengthCompleted || 0);
+        const lengthFields = isBook
+          ? `
+            <div>
+              <label>Book format</label>
+              <select data-field="bookFormat" data-id="${item.id}">
+                <option value="physical">Physical book (pages)</option>
+                <option value="audio">Audio book (HH:MM)</option>
+              </select>
+            </div>
+            <div class="book-format-fields" data-format="physical">
+              <label>Page count</label>
+              <input data-field="pageCount" data-id="${item.id}" type="number" min="0" value="${item.pageCount || item.lengthTotal || ""}" />
+            </div>
+            <div class="book-format-fields" data-format="physical">
+              <label>Pages completed</label>
+              <input data-field="pagesCompleted" data-id="${item.id}" type="number" min="0" value="${item.pagesCompleted || item.lengthCompleted || ""}" />
+            </div>
+            <div class="book-format-fields" data-format="audio">
+              <label>Audio duration (HH:MM)</label>
+              <input data-field="audioDuration" data-id="${item.id}" type="time" step="60" value="${audioDuration}" />
+            </div>
+            <div class="book-format-fields" data-format="audio">
+              <label>Audio completed (HH:MM)</label>
+              <input data-field="audioCompleted" data-id="${item.id}" type="time" step="60" value="${audioCompleted}" />
+            </div>
+          `
+          : `
+            <div>
+              <label>Total length</label>
+              <input data-field="lengthTotal" data-id="${item.id}" type="number" min="0" value="${item.lengthTotal || ""}" />
+            </div>
+            <div>
+              <label>Completed length</label>
+              <input data-field="lengthCompleted" data-id="${item.id}" type="number" min="0" value="${item.lengthCompleted || ""}" />
+            </div>
+            <div>
+              <label>Length unit</label>
+              <input data-field="lengthUnit" data-id="${item.id}" value="${item.lengthUnit || ""}" />
+            </div>
+          `;
         const card = document.createElement("div");
         card.className = "media-item";
         card.innerHTML = `
@@ -720,18 +983,7 @@
               <label>Cover art</label>
               <input data-field="cover" data-id="${item.id}" value="${item.cover || ""}" />
             </div>
-            <div>
-              <label>Total length</label>
-              <input data-field="lengthTotal" data-id="${item.id}" type="number" min="0" value="${item.lengthTotal || ""}" />
-            </div>
-            <div>
-              <label>Completed length</label>
-              <input data-field="lengthCompleted" data-id="${item.id}" type="number" min="0" value="${item.lengthCompleted || ""}" />
-            </div>
-            <div>
-              <label>Length unit</label>
-              <input data-field="lengthUnit" data-id="${item.id}" value="${item.lengthUnit || ""}" />
-            </div>
+            ${lengthFields}
             <div>
               <label>Genres</label>
               <input data-field="genres" data-id="${item.id}" value="${item.genres || ""}" />
@@ -783,6 +1035,11 @@
         if (select) {
           select.value = item.status || "wish";
         }
+        const formatSelect = card.querySelector("select[data-field='bookFormat']");
+        if (formatSelect) {
+          formatSelect.value = bookFormat;
+        }
+        wireBookFormatToggles(card);
         listContainer.appendChild(card);
       });
 
@@ -803,6 +1060,9 @@
       if (!item) return;
 
       item[field] = target.value;
+      if (typeId === "book") {
+        syncBookLengthFields(item);
+      }
       saveState();
       renderDashboard();
     }
@@ -824,8 +1084,28 @@
     function renderApp() {
       renderTabs();
       renderDashboard();
+      toggleDashboardVisibility();
       renderSections();
     }
+
+    // Set up modal controls for accessibility.
+    const modalOverlay = document.getElementById("modal-overlay");
+    const modalCloseButton = document.getElementById("modal-close");
+    if (modalCloseButton) {
+      modalCloseButton.addEventListener("click", () => closeModal());
+    }
+    if (modalOverlay) {
+      modalOverlay.addEventListener("click", (event) => {
+        if (event.target === modalOverlay) {
+          closeModal();
+        }
+      });
+    }
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeModal();
+      }
+    });
 
     // Initialize the app and set up auto-save.
     renderApp();
